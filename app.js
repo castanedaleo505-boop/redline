@@ -1,7 +1,7 @@
 /* Redline. One file, no libraries. All data stays in this phone's localStorage. */
 (function(){
 'use strict';
-const APP_VERSION='1.0';
+const APP_VERSION='1.1';
 const LS='redline.v1';
 const HINT_KEY='redline.hint';
 const TAB_DOW=[1,2,3,4,5,6,0];
@@ -257,9 +257,120 @@ function progressHtml(){
   return card+'<div class="sec-t">All lifts</div>'+rows;
 }
 
+
+/* ---------- locked in: streak, weekly score, recap ---------- */
+const HIT=80;
+const parseKey=k=>{const p=k.split('-');return new Date(+p[0],+p[1]-1,+p[2])};
+const addDays=(d,n)=>new Date(d.getFullYear(),d.getMonth(),d.getDate()+n);
+function dayStat(key){
+  const pl=state.plan[parseKey(key).getDay()];
+  if(!pl||!pl.ex.length||/^off\b/i.test(pl.title))return {off:true,t:0,d:0,pct:0,wl:0,wt:0};
+  let t=0,d=0,wt=0,wl=0;
+  pl.ex.forEach(e=>{
+    const dn=getDone(key,e).filter(Boolean).length;
+    t+=nsets(key,e);d+=dn;
+    if(dn>0&&!e.nw){wt++;if(getW(key,effName(key,e)))wl++}
+  });
+  return {off:false,t:t,d:d,pct:t?Math.round(d*100/t):0,wl:wl,wt:wt};
+}
+function weekStat(mon){
+  let t=0,d=0,wt=0,wl=0,hit=0,sess=0;const days=[],missed=[];
+  for(let i=0;i<7;i++){
+    const dt=addDays(mon,i),k=dkey(dt),s=dayStat(k);
+    let st;
+    if(s.off)st='off';
+    else if(s.pct>=HIT)st='hit';
+    else if(k<todayKey)st=s.d>0?'part':'miss';
+    else if(k===todayKey)st=s.d>0?'part':'today';
+    else st='ahead';
+    if(st==='miss'||st==='part')missed.push(LONG[dt.getDay()].slice(0,3));
+    days.push({k:k,l:['M','T','W','T','F','S','S'][i],st:st});
+    if(!s.off){t+=s.t;d+=s.d;wt+=s.wt;wl+=s.wl;if(s.pct>=HIT)hit++;if(s.d>0)sess++}
+  }
+  const score=Math.round(100*(0.7*(t?d/t:0)+0.3*(wt?wl/wt:0)));
+  const m=allSeries(),from=days[0].k,to=days[6].k;let prs=0;
+  Object.keys(m).forEach(k=>{let best=0;m[k].forEach(p=>{if(best>0&&p.v>best&&p.d>=from&&p.d<=to)prs++;if(p.v>best)best=p.v})});
+  const planned=days.filter(x=>x.st!=='off').length;
+  return {score:score,sets:d,setsTotal:t,hit:hit,planned:planned,sess:sess,wl:wl,wt:wt,prs:prs,days:days,missed:missed,from:from};
+}
+function streakInfo(){
+  const ks=Object.keys(state.log).filter(k=>{const l=state.log[k];return l&&l.d&&Object.keys(l.d).some(id=>/1/.test(l.d[id]))}).sort();
+  if(!ks.length)return {cur:0,best:0};
+  let cur=0,best=0;
+  for(let dt=parseKey(ks[0]);dkey(dt)<=todayKey;dt=addDays(dt,1)){
+    const k=dkey(dt),s=dayStat(k);
+    if(s.off)continue;
+    if(s.pct>=HIT){cur++;if(cur>best)best=cur}
+    else if(k!==todayKey)cur=0;
+  }
+  return {cur:cur,best:best};
+}
+const TIERS=[
+  [0,'Ghost','No sets logged yet. The weights are starting rumors about you.'],
+  [1,'Pulse detected','A set happened. Medical staff are cautiously optimistic.'],
+  [25,'Warming up','The iron has noticed you.'],
+  [50,'Locked in','Phone face down. Jaw set. Zero small talk.'],
+  [75,'Feral','You stopped asking if you feel like it. That question is gone.'],
+  [90,'Unhinged','Neighbors have reported unusual levels of focus.']
+];
+const tierFor=sc=>{let t=TIERS[0];TIERS.forEach(x=>{if(sc>=x[0])t=x});return t};
+function streakLine(n){
+  if(n<=0)return 'Streak is at zero. Today fixes that.';
+  if(n===1)return 'One down. The rest is repetition.';
+  if(n<4)return 'Momentum is a rumor until it isn’t. It’s getting real.';
+  if(n<6)return 'Your couch has filed a missing-person report.';
+  if(n<12)return 'A full week. Friends are asking if you’re okay.';
+  if(n<24)return 'Two weeks. This is no longer a phase.';
+  return 'You’re not training anymore. You’re a lifestyle brand.';
+}
+function lockHtml(){
+  const wk=weekStat(monday),lw=weekStat(addDays(monday,-7)),sk=streakInfo(),tr=tierFor(wk.score);
+  const lastHas=lw.sets>0;
+  const diff=lastHas?wk.score-lw.score:null;
+  const cls=wk.score>=90?' hot':(wk.score>=75?' warm':'');
+  const ticks=[25,50,75,90].map(x=>'<u style="left:'+x+'%"></u>').join('');
+  let h='<div class="lk-card'+cls+'"><div class="lk-top"><div class="lk-lab">Locked-in meter · this week</div>'+
+    '<div class="lk-score" id="lk-score">'+wk.score+'</div></div>'+
+    '<div class="lk-bar" role="img" aria-label="Locked in score '+wk.score+' out of 100"><i style="width:'+wk.score+'%"></i>'+ticks+'</div>'+
+    '<div class="lk-tier">'+esc(tr[1])+'</div><p class="lk-q">'+esc(tr[2])+'</p>'+
+    '<p class="lk-how">Score = 70% sets finished + 30% lifts with a weight logged. Full week resets Monday.</p></div>';
+  h+='<div class="lk-streak"><div class="lk-flame" aria-hidden="true">🔥</div><div class="lk-sn"><b>'+sk.cur+'</b><span>'+(sk.cur===1?'session':'sessions')+' in a row</span></div>'+
+    '<div class="lk-sb"><b>'+sk.best+'</b><span>best</span></div></div>'+
+    '<p class="lk-q pad">'+esc(streakLine(sk.cur))+' <span class="lk-fine">A session counts at '+HIT+'% of sets. Sunday and off days never break it.</span></p>';
+  h+='<div class="sec-t">This week</div><div class="lk-days">'+wk.days.map(x=>'<div class="lk-d '+x.st+'"><span>'+x.l+'</span><i></i></div>').join('')+'</div>';
+  const rows=[
+    ['Sets finished',wk.sets+' of '+wk.setsTotal],
+    ['Sessions hit',wk.hit+' of '+wk.planned],
+    ['Weights logged',wk.wt?wk.wl+' of '+wk.wt+' lifts':'–'],
+    ['New personal bests',String(wk.prs)],
+    ['Vs last week',diff===null?'–':(diff>0?'+':'')+diff+' pts']
+  ];
+  h+='<div class="lk-rows">'+rows.map(r=>'<div><span>'+r[0]+'</span><b>'+esc(r[1])+'</b></div>').join('')+'</div>';
+  let verdict='';
+  if(wk.prs>0)verdict='New best on '+wk.prs+(wk.prs===1?' lift':' lifts')+'. The bar moved and you moved it.';
+  else if(wk.missed.length)verdict='Skipped: '+wk.missed.join(', ')+'. It will be remembered.';
+  else if(wk.sets>0)verdict='Clean week so far. Do not get weird about it. (Get weird about it.)';
+  if(verdict)h+='<p class="lk-q pad">'+esc(verdict)+'</p>';
+  const past=[];for(let i=5;i>=1;i--){const w=weekStat(addDays(monday,-7*i));past.push({s:w.score,has:w.sets>0,d:fmtd(w.from)})}
+  if(past.some(x=>x.has)){
+    h+='<div class="sec-t">Last 5 weeks</div><div class="lk-hist">'+past.map(x=>'<div><div class="col"><i style="height:'+(x.has?Math.max(4,x.s):0)+'%"></i></div><b>'+(x.has?x.s:'–')+'</b><span>'+esc(x.d)+'</span></div>').join('')+'</div>';
+  }
+  h+='<button class="wide-btn" data-act="lkshare">Share this week</button>';
+  return h;
+}
+function shareLock(){
+  const wk=weekStat(monday),sk=streakInfo(),tr=tierFor(wk.score);
+  const text='REDLINE · '+wk.score+'/100 · '+tr[1].toUpperCase()+'\n🔥 '+sk.cur+' in a row · '+wk.sets+'/'+wk.setsTotal+' sets · '+wk.prs+' PR'+(wk.prs===1?'':'s')+'\n"'+tr[2]+'"';
+  try{
+    if(navigator.share){navigator.share({text:text}).catch(()=>{});return}
+    if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(text).then(()=>flash('Copied. Paste it in a group chat.'),()=>flash('Could not copy.'));return}
+  }catch(e){}
+  flash('Sharing is blocked in this browser.');
+}
+
 /* ---------- rendering ---------- */
 function renderHead(){
-  const seg='<div class="seg"><button class="'+(view==='work'?'on':'')+'" data-act="view" data-v="work" aria-pressed="'+(view==='work')+'">Workout</button><button class="'+(view==='prog'?'on':'')+'" data-act="view" data-v="prog" aria-pressed="'+(view==='prog')+'">Progress</button></div>';
+  const seg='<div class="seg"><button class="'+(view==='work'?'on':'')+'" data-act="view" data-v="work" aria-pressed="'+(view==='work')+'">Workout</button><button class="'+(view==='prog'?'on':'')+'" data-act="view" data-v="prog" aria-pressed="'+(view==='prog')+'">Progress</button><button class="'+(view==='lock'?'on':'')+'" data-act="view" data-v="lock" aria-pressed="'+(view==='lock')+'">Locked in</button></div>';
   let h='<div class="top-row">'+seg+(view==='work'?'<button class="edit-btn'+(editMode?' on':'')+'" data-act="edit" aria-pressed="'+editMode+'">'+(editMode?'Done':'Edit')+'</button>':'')+'</div>';
   if(view==='work'){
     const tabs=TAB_DOW.map((dow,i)=>{
@@ -365,11 +476,12 @@ function editHtml(plan){
 }
 function renderList(){
   if(view==='prog'){$('#list').innerHTML=progressHtml();return}
+  if(view==='lock'){$('#list').innerHTML=lockHtml();return}
   const s=stats(sel),plan=state.plan[s.dow];
   $('#list').innerHTML=editMode?editHtml(plan):hintHtml()+bannerHtml()+plan.ex.map(e=>cardHtml(e,s.key)).join('');
 }
 function renderFoot(){
-  $('#ft').innerHTML=(editMode||view==='prog'?'':'<button class="wide-btn dim" data-act="clear">'+(armed==='clear'?'Tap again to clear':'Clear this day’s sets')+'</button>')+'<div class="status" id="status">'+statusText()+'</div>';
+  $('#ft').innerHTML=(editMode||view!=='work'?'':'<button class="wide-btn dim" data-act="clear">'+(armed==='clear'?'Tap again to clear':'Clear this day’s sets')+'</button>')+'<div class="status" id="status">'+statusText()+'</div>';
 }
 function renderAll(){renderHead();renderList();renderFoot()}
 function arm(k){armed=k;clearTimeout(armT);armT=setTimeout(()=>{armed=null;renderList();renderFoot()},3000);renderList();renderFoot()}
@@ -470,6 +582,7 @@ document.addEventListener('click',ev=>{
   let e,key,plan,l;
   switch(a){
     case 'view':view=b.dataset.v;editMode=false;armed=null;renderAll();window.scrollTo(0,0);break;
+    case 'lkshare':shareLock();break;
     case 'psel':progSel=b.dataset.k;renderList();window.scrollTo(0,0);break;
     case 'tab':sel=i;armed=null;renderAll();window.scrollTo(0,0);break;
     case 'edit':editMode=!editMode;armed=null;renderAll();break;
