@@ -1,7 +1,7 @@
 /* Redline. One file, no libraries. All data stays in this phone's localStorage. */
 (function(){
 'use strict';
-const APP_VERSION='1.2';
+const APP_VERSION='1.3';
 const LS='redline.v1';
 const HINT_KEY='redline.hint';
 const TAB_DOW=[1,2,3,4,5,6,0];
@@ -85,7 +85,7 @@ function alternates(name){
 /* ---------- state + storage ---------- */
 const now=new Date();
 const todayKey=dkey(now);
-function freshState(){return {v:2,rev:0,plan:defaultPlan(),planVer:2,target:75,log:{},auto:true,notes:{},names:{},blockLen:6,block:null}}
+function freshState(){return {v:2,rev:0,plan:defaultPlan(),planVer:2,target:75,body:{},name:'Leo',log:{},auto:true,notes:{},names:{},blockLen:6,block:null}}
 function migrate(s){
   if(!s||typeof s!=='object')s=freshState();
   const f=freshState();
@@ -93,6 +93,8 @@ function migrate(s){
   Object.keys(f.plan).forEach(k=>{if(!s.plan[k]||!Array.isArray(s.plan[k].ex))s.plan[k]=f.plan[k]});
   if(!s.log||typeof s.log!=='object')s.log={};
   if(typeof s.planVer!=='number')s.planVer=1;
+  if(!s.body||typeof s.body!=='object')s.body={};
+  if(typeof s.name!=='string'||!s.name.trim())s.name='Leo';
   if([60,75,90].indexOf(s.target)<0)s.target=75;
   if(typeof s.auto!=='boolean')s.auto=true;
   if(!s.notes||typeof s.notes!=='object')s.notes={};
@@ -468,10 +470,328 @@ function planBannerHtml(){
     '<button class="wide-btn" data-act="plan2">'+(armed==='plan2'?'Tap again to load':'Load new plan')+'</button><button class="mini" data-act="plan2x">Not now</button></div>';
 }
 
+/* ---------- physique: photos, body numbers, character ---------- */
+const POSES=['front','side','back'];
+const POSE_L={front:'Front',side:'Side',back:'Back'};
+const POSE_HINT={front:'Face the camera. Arms slightly out, relaxed.',side:'Turn 90 degrees. Arms at your sides.',back:'Face away. Arms slightly out, relaxed.'};
+const BODY_F=[['bw','Body weight','lb'],['sh','Shoulders','in'],['ch','Chest','in'],['wa','Waist','in'],['ar','Arm, flexed','in'],['th','Thigh','in'],['ca','Calf','in']];
+const MUS=['shoulders','chest','back','biceps','triceps','quads','hams','glutes','calves'];
+const MUS_L={shoulders:'Shoulders',chest:'Chest',back:'Back',biceps:'Biceps',triceps:'Triceps',quads:'Quads',hams:'Hamstrings',glutes:'Glutes',calves:'Calves'};
+const MUSCLE_MAP=[
+  [/reverse pec|rear delt|face pull/i,[['shoulders',.7]]],
+  [/lateral raise/i,[['shoulders',1]]],
+  [/shoulder press|overhead press|arnold/i,[['shoulders',1],['triceps',.4]]],
+  [/pec deck|fly/i,[['chest',1]]],
+  [/dips/i,[['triceps',1],['chest',.4]]],
+  [/bench|chest press|incline.*press|push-up/i,[['chest',1],['triceps',.4],['shoulders',.3]]],
+  [/pushdown|tricep|skull/i,[['triceps',1]]],
+  [/leg curl|hamstring|nordic|romanian|deadlift|good morning/i,[['hams',1],['glutes',.4]]],
+  [/curl/i,[['biceps',1]]],
+  [/pull-up|pulldown|chin|row|straight-arm/i,[['back',1],['biceps',.4]]],
+  [/hip |glute|kickback/i,[['glutes',1]]],
+  [/calf/i,[['calves',1]]],
+  [/squat|hack|pendulum|leg extension|leg press|lunge/i,[['quads',1],['glutes',.3]]]
+];
+const muscleOf=n=>{for(let i=0;i<MUSCLE_MAP.length;i++)if(MUSCLE_MAP[i][0].test(n))return MUSCLE_MAP[i][1];return []};
+const TITLES=['Rookie','Regular','Grinder','Gym Rat','Iron Head','Menace','Feral','Unhinged','Final Boss','Mythic','Redline'];
+const PH={list:[],loaded:false,loading:false,failed:false,urls:{}};
+const AV={h:null,lib:null,t:null};
+const CAM={on:false,step:0,facing:'user',timer:10,stream:null,shots:{},review:null,count:0,cd:null,err:'',saving:false};
+let DBH=null;
+
+/* photo storage (IndexedDB, stays on this phone) */
+function idb(){return new Promise((res,rej)=>{
+  if(DBH)return res(DBH);
+  if(!window.indexedDB)return rej(new Error('no indexedDB'));
+  let r;try{r=indexedDB.open('redline-photos',1)}catch(e){return rej(e)}
+  r.onupgradeneeded=()=>{r.result.createObjectStore('photos',{keyPath:'k'})};
+  r.onsuccess=()=>{DBH=r.result;res(DBH)};
+  r.onerror=()=>rej(r.error);r.onblocked=()=>rej(new Error('blocked'));
+})}
+function idbRun(mode,fn){return idb().then(db=>new Promise((res,rej)=>{
+  const tx=db.transaction('photos',mode),rq=fn(tx.objectStore('photos'));
+  tx.oncomplete=()=>res(rq&&rq.result);tx.onerror=()=>rej(tx.error);tx.onabort=()=>rej(tx.error);
+}))}
+function loadPhotos(){
+  if(PH.loading)return;PH.loading=true;
+  idbRun('readonly',st=>st.getAll()).then(arr=>{
+    Object.keys(PH.urls).forEach(k=>{try{URL.revokeObjectURL(PH.urls[k])}catch(e){}});PH.urls={};
+    PH.list=(arr||[]).sort((a,b)=>a.date<b.date?-1:(a.date>b.date?1:0));PH.loaded=true;PH.loading=false;
+    if(view==='phys')renderList();
+  }).catch(()=>{PH.failed=true;PH.loaded=true;PH.loading=false;if(view==='phys')renderList()});
+}
+const photoRec=(d,p)=>PH.list.find(r=>r.date===d&&r.pose===p)||null;
+function photoUrl(r){if(!PH.urls[r.k+r.ts])PH.urls[r.k+r.ts]=URL.createObjectURL(r.blob);return PH.urls[r.k+r.ts]}
+function savePhoto(date,pose,blob,w,h){
+  const rec={k:date+'|'+pose,date:date,pose:pose,blob:blob,w:w,h:h,ts:Date.now()};
+  return idbRun('readwrite',st=>st.put(rec)).then(()=>{
+    PH.list=PH.list.filter(r=>r.k!==rec.k);PH.list.push(rec);
+    PH.list.sort((a,b)=>a.date<b.date?-1:(a.date>b.date?1:0));
+  });
+}
+function delCheckin(date){
+  return idbRun('readwrite',st=>{POSES.forEach(p=>st.delete(date+'|'+p))}).then(()=>{PH.list=PH.list.filter(r=>r.date!==date)});
+}
+const checkDates=()=>{const s={};PH.list.forEach(r=>{s[r.date]=1});return Object.keys(s).sort()};
+
+/* body numbers */
+function dayBody(key,make){let b=state.body[key];if(!b&&make)b=state.body[key]={};return b}
+function bodyPts(f){
+  const o=[];Object.keys(state.body).sort().forEach(k=>{const v=parseFloat(state.body[k][f]);if(v>0)o.push({d:k,v:v})});return o;
+}
+function bodyLatest(f,before){
+  const p=bodyPts(f).filter(x=>!before||x.d<before);return p.length?p[p.length-1]:null;
+}
+function bodySumHtml(){
+  const rows=BODY_F.map(f=>{
+    const p=bodyPts(f[0]);if(!p.length)return '';
+    const a=p[0].v,b=p[p.length-1].v,d=b-a;
+    return '<div class="prow static"><div><div class="nm">'+f[1]+'</div><div class="sub">'+fnum(b)+' '+f[2]+(p.length>1?' · since '+fmtd(p[0].d)+' ('+(d>0?'+':'')+fnum(d)+')':' · first entry')+'</div></div>'+(p.length>1?spark(p):'')+'</div>';
+  }).join('');
+  return rows||'<div class="ed-note">Enter any numbers above. Use a tape measure, relaxed, same spot each time. Your character grows with them.</div>';
+}
+
+/* muscle groups, level */
+function weekMuscle(){
+  const out={};MUS.forEach(g=>{out[g]={done:0,plan:0}});
+  for(let i=0;i<7;i++){
+    const dt=addDays(monday,i),key=dkey(dt),pl=state.plan[dt.getDay()];
+    if(!pl||/^off\b/i.test(pl.title))continue;
+    pl.ex.forEach(e=>{
+      if(e.nw)return;
+      const mm=muscleOf(effName(key,e)),n=nsets(key,e),dn=getDone(key,e).filter(Boolean).length;
+      mm.forEach(x=>{out[x[0]].plan+=n*x[1];out[x[0]].done+=dn*x[1]});
+    });
+  }
+  return out;
+}
+function totalSets(){
+  let n=0;
+  Object.keys(state.log).forEach(k=>{
+    const l=state.log[k];if(!l)return;
+    if(l.f){n+=l.f.d;return}
+    if(l.d)Object.keys(l.d).forEach(id=>{if(/^(d|p2_)0_/.test(id))return;const m=String(l.d[id]).match(/1/g);if(m)n+=m.length});
+  });
+  return n;
+}
+function levelInfo(){
+  const total=totalSets(),n=1+Math.floor(Math.sqrt(total/30)),lo=30*(n-1)*(n-1),hi=30*n*n;
+  return {n:n,total:total,title:TITLES[Math.min(n-1,TITLES.length-1)],next:hi,pct:Math.round((total-lo)*100/(hi-lo))};
+}
+function avParams(){
+  const meas={};['sh','ch','wa','ar','th','ca'].forEach(f=>{const l=bodyLatest(f);if(l)meas[f]=l.v});
+  const wm=weekMuscle(),glow={};MUS.forEach(g=>{glow[g]=wm[g].plan?Math.min(1,wm[g].done/wm[g].plan):0});
+  return {meas:meas,glow:glow,name:state.name};
+}
+function loadScript(src){return new Promise((res,rej)=>{const s=document.createElement('script');s.src=src;s.onload=res;s.onerror=()=>rej(new Error('load '+src));document.head.appendChild(s)})}
+function loadAvatarLib(){
+  if(!AV.lib)AV.lib=loadScript('vendor/three.min.js').then(()=>loadScript('avatar.js'));
+  return AV.lib;
+}
+function avDestroy(){if(AV.h){AV.h.destroy();AV.h=null}}
+function avUpdate(){clearTimeout(AV.t);AV.t=setTimeout(()=>{if(AV.h)AV.h.update(avParams())},180)}
+function physMount(){
+  const cv=document.getElementById('av');if(!cv)return;
+  const note=document.getElementById('av-note');
+  loadAvatarLib().then(()=>{
+    if(view!=='phys'||document.getElementById('av')!==cv||AV.h)return;
+    AV.h=window.RedlineAvatar?window.RedlineAvatar.create(cv,avParams()):null;
+    if(!AV.h&&note)note.textContent='3D is not available in this browser. Your muscle bars still work.';
+  }).catch(()=>{if(note)note.textContent='Could not load the 3D character. Check your connection once, then it works offline.'});
+}
+
+/* compare + history markup */
+function compareHtml(){
+  const pose=UI.cmpPose||'front';
+  let h='<div class="chips">'+POSES.map(p=>'<button class="chip'+(p===pose?' red':'')+'" data-act="cpose" data-p="'+p+'" aria-pressed="'+(p===pose)+'">'+POSE_L[p]+'</button>').join('')+'</div>';
+  const ds=PH.list.filter(r=>r.pose===pose).map(r=>r.date);
+  if(ds.length<2)return h+'<div class="ed-note">Compare needs two check-ins with a '+pose+' photo. You have '+ds.length+'.</div>';
+  let a=UI.cmpA,b=UI.cmpB;
+  if(ds.indexOf(a)<0)a=ds[0];if(ds.indexOf(b)<0)b=ds[ds.length-1];
+  UI.cmpA=a;UI.cmpB=b;
+  const ra=photoRec(a,pose),rb=photoRec(b,pose);
+  const opt=v=>ds.map(d=>'<option value="'+d+'"'+(d===v?' selected':'')+'>'+fmtd(d)+', '+d.slice(0,4)+'</option>').join('');
+  h+='<div class="cmp-sel-row"><label>Before<select class="cmp-sel" id="cmp-a">'+opt(a)+'</select></label><label>After<select class="cmp-sel" id="cmp-b">'+opt(b)+'</select></label></div>';
+  h+='<div class="cmp" id="cmp" style="--pos:50%;aspect-ratio:'+(rb.w||3)+' / '+(rb.h||4)+'"><img class="cmp-b" alt="After photo" src="'+photoUrl(rb)+'"><img class="cmp-a" alt="Before photo" src="'+photoUrl(ra)+'"><div class="cmp-line"></div>'+
+    '<span class="cmp-la">'+esc(fmtd(a))+'</span><span class="cmp-lb">'+esc(fmtd(b))+'</span>'+
+    '<input type="range" min="0" max="100" value="50" id="cmp-r" aria-label="Slide between before and after"></div>';
+  return h;
+}
+function historyHtml(){
+  return checkDates().slice().reverse().map(d=>{
+    const th=POSES.map(p=>{const r=photoRec(d,p);return r?'<button class="thumb" data-act="phview" data-k="'+esc(r.k)+'" aria-label="View '+p+' photo"><img alt="" src="'+photoUrl(r)+'"><span>'+POSE_L[p]+'</span></button>':'<div class="thumb none"><span>'+POSE_L[p]+'</span></div>'}).join('');
+    return '<div class="ex"><div class="ex-top"><div class="ex-name">'+esc(fmtd(d))+', '+d.slice(0,4)+'</div></div><div class="thumbs">'+th+'</div>'+
+      '<div class="ed-row"><button class="mini" style="flex:1" data-act="phshare" data-d="'+d+'">Share or save</button><button class="mini danger" style="flex:1" data-act="phdel" data-d="'+d+'">'+(armed==='phdel'+d?'Tap again to delete':'Delete')+'</button></div></div>';
+  }).join('');
+}
+function physHtml(){
+  const lv=levelInfo(),wm=weekMuscle();
+  let h='<div class="av-card"><canvas id="av" aria-label="Your Redline character. Drag to rotate."></canvas>'+
+    '<div class="av-over"><div class="av-lv"><span>Level</span><b>'+lv.n+'</b></div><div class="av-id"><div class="av-name" id="av-name">'+esc(state.name)+'</div><div class="av-ti">'+esc(lv.title)+'</div></div></div>'+
+    '<div class="av-xp"><i style="width:'+lv.pct+'%"></i></div><div class="av-xt"><span>'+lv.total+' lifetime sets</span><span>'+(lv.next-lv.total)+' to level '+(lv.n+1)+'</span></div>'+
+    '<div class="ed-f av-nm"><label for="nm-in">Name on your character</label><input id="nm-in" class="name-in" maxlength="14" autocomplete="off" value="'+esc(state.name)+'"></div>'+
+    '<div class="ed-note" id="av-note">Drag to rotate. Size follows your tape numbers. Red glow is how much of each muscle’s sets you’ve finished this week.</div></div>';
+  h+='<div class="sec-t">This week by muscle</div><div class="mus">'+MUS.map(g=>{
+    const x=wm[g],p=x.plan?Math.min(100,Math.round(x.done*100/x.plan)):0;
+    return '<div class="mrow"><span>'+MUS_L[g]+'</span><div class="mb"><i style="width:'+p+'%"></i></div><b>'+fnum(x.done)+' / '+fnum(x.plan)+'</b></div>';
+  }).join('')+'</div>';
+  const ds=checkDates(),last=ds.length?ds[ds.length-1]:null;
+  h+='<div class="sec-t">Photo check-in</div><div class="ex"><div class="ex-name">'+(last?'Last check-in: '+esc(fmtd(last))+' · '+dayDiff(last,todayKey)+' days ago':'No check-ins yet')+'</div>'+
+    '<div class="ed-note">Front, side and back with a self-timer. Same spot, same light and same time of day makes the comparison fair. Once a month works well.</div>'+
+    '<button class="wide-btn" data-act="camstart">Start check-in</button></div>';
+  const tb=state.body[todayKey]||{};
+  h+='<div class="sec-t">Body numbers · today</div><div class="ex"><div class="bd-grid">'+BODY_F.map(f=>{
+    const lastv=bodyLatest(f[0],todayKey);
+    return '<div class="ed-f"><label for="bd-'+f[0]+'">'+f[1]+' ('+f[2]+')</label><input id="bd-'+f[0]+'" class="bd-in" data-f="'+f[0]+'" inputmode="decimal" autocomplete="off" placeholder="'+(lastv?fnum(lastv.v):'')+'" value="'+esc(tb[f[0]]||'')+'"></div>';
+  }).join('')+'</div><div class="ed-note">Tape in inches, body weight in pounds. Saved under today’s date.</div></div>';
+  h+='<div id="bd-sum">'+bodySumHtml()+'</div>';
+  h+='<div class="sec-t">Compare</div>';
+  if(PH.failed)h+='<div class="empty"><b>Photos blocked</b><p>This browser is blocking photo storage, so check-ins can’t be saved here.</p></div>';
+  else if(!PH.loaded)h+='<div class="ed-note">Loading photos…</div>';
+  else if(!PH.list.length)h+='<div class="empty"><b>No photos yet</b><p>Do a check-in and your photos show up here. They stay on this phone.</p></div>';
+  else h+='<div class="ex">'+compareHtml()+'</div><div class="sec-t">All check-ins</div>'+historyHtml()+
+    '<div class="ed-note">Photos live only on this phone, not in the text backup. Use Share or save now and then so a phone problem can’t take them.</div>';
+  return h;
+}
+function sharePhotos(d){
+  const files=POSES.map(p=>photoRec(d,p)).filter(Boolean).map(r=>new File([r.blob],'redline-'+r.date+'-'+r.pose+'.jpg',{type:'image/jpeg'}));
+  try{
+    if(files.length&&navigator.canShare&&navigator.canShare({files:files})){navigator.share({files:files,title:'Redline check-in '+d}).catch(()=>{});return}
+  }catch(e){}
+  flash('Sharing isn’t supported here. Tap a photo, then press and hold it to save.');
+}
+function viewPhoto(k){
+  const r=PH.list.find(x=>x.k===k);if(!r)return;
+  const v=$('#viewer');v.innerHTML='<button class="v-x" data-act="vclose" aria-label="Close photo">Close</button><img alt="'+POSE_L[r.pose]+' photo from '+esc(fmtd(r.date))+'" src="'+photoUrl(r)+'"><div class="v-cap">'+esc(fmtd(r.date))+' · '+POSE_L[r.pose]+'</div>';
+  v.classList.add('on');
+}
+
+/* camera check-in */
+const GUIDE='<svg class="cam-guide" viewBox="0 0 100 150" preserveAspectRatio="xMidYMid meet" aria-hidden="true"><g fill="none" stroke="#fff" stroke-opacity=".5" stroke-width=".7" stroke-dasharray="2 1.6"><circle cx="50" cy="17" r="7"/><path d="M33 31 L67 31 L61 80 L39 80 Z"/><path d="M33 31 L22 72 M67 31 L78 72"/><path d="M42 80 L40 142 M58 80 L60 142"/></g></svg>';
+function camShell(){
+  $('#cam').innerHTML=
+    '<div class="cam-top"><button class="cam-btn" data-act="camx">Close</button><div class="cam-t" id="cam-t"></div><button class="cam-btn" data-act="camflip" id="cam-flip">Flip</button></div>'+
+    '<div class="cam-stage"><video id="cam-v" playsinline muted autoplay></video><img id="cam-r" alt="Photo preview">'+GUIDE+'<div class="cam-count" id="cam-c"></div><div class="cam-msg" id="cam-m"></div></div>'+
+    '<div class="cam-hint" id="cam-h"></div>'+
+    '<div class="cam-bot" id="cam-live"><div class="cam-timers" id="cam-tm"></div><button class="shutter" id="cam-s" data-act="camshot" aria-label="Take photo"></button><div class="cam-side"><button class="cam-btn" data-act="camlib">Library</button><button class="cam-btn" data-act="camskip">Skip pose</button></div></div>'+
+    '<div class="cam-bot rv" id="cam-rv"><button class="cam-btn big" data-act="camretake">Retake</button><button class="cam-btn big red" data-act="camkeep" id="cam-keep">Keep</button></div>'+
+    '<input type="file" id="cam-f" accept="image/*" hidden>';
+  $('#cam').classList.add('on');
+}
+function camUpdate(){
+  const pose=POSES[CAM.step]||'front',rv=!!CAM.review;
+  const g=id=>document.getElementById(id);if(!g('cam-t'))return;
+  g('cam-t').textContent=(CAM.step+1)+' of 3 · '+POSE_L[pose];
+  g('cam-h').textContent=CAM.err||POSE_HINT[pose];
+  g('cam-h').className='cam-hint'+(CAM.err?' err':'');
+  const v=g('cam-v');
+  v.className=CAM.facing==='user'?'mir':'';
+  v.style.display=rv?'none':'block';
+  if(CAM.stream&&v.srcObject!==CAM.stream){v.srcObject=CAM.stream;const p=v.play();if(p&&p.catch)p.catch(()=>{})}
+  const im=g('cam-r');im.style.display=rv?'block':'none';if(rv&&im.src!==CAM.review.url)im.src=CAM.review.url;
+  g('cam-live').style.display=rv?'none':'flex';g('cam-rv').style.display=rv?'flex':'none';
+  g('cam-tm').innerHTML=[0,5,10].map(n=>'<button class="cam-chip'+(CAM.timer===n?' on':'')+'" data-act="camtimer" data-n="'+n+'" aria-pressed="'+(CAM.timer===n)+'">'+(n?n+'s':'Off')+'</button>').join('');
+  g('cam-c').textContent=CAM.count>0?String(CAM.count):'';
+  g('cam-s').className='shutter'+(CAM.cd?' on':'');
+  g('cam-s').setAttribute('aria-label',CAM.cd?'Cancel countdown':'Take photo');
+  g('cam-keep').textContent=CAM.saving?'Saving…':(CAM.step>=2?'Save check-in':'Keep');
+  g('cam-m').textContent=(!CAM.stream&&!rv)?'Starting camera…':'';
+  g('cam-flip').style.visibility=CAM.stream?'visible':'hidden';
+}
+function camStop(){
+  if(CAM.cd){clearInterval(CAM.cd);CAM.cd=null}CAM.count=0;
+  if(CAM.stream){CAM.stream.getTracks().forEach(t=>t.stop());CAM.stream=null}
+}
+function camStart(){
+  camStop();
+  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){CAM.err='This browser can’t open the camera. Use Library to pick a photo.';camUpdate();return}
+  navigator.mediaDevices.getUserMedia({video:{facingMode:CAM.facing,width:{ideal:1080},height:{ideal:1440}},audio:false}).then(s=>{
+    if(!CAM.on){s.getTracks().forEach(t=>t.stop());return}
+    CAM.stream=s;CAM.err='';camUpdate();
+  }).catch(()=>{CAM.err='Camera is blocked. Allow it in Settings, or use Library to pick a photo.';camUpdate()});
+}
+function camOpen(){
+  CAM.on=true;CAM.step=0;CAM.shots={};CAM.review=null;CAM.err='';CAM.saving=false;
+  camShell();camUpdate();camStart();
+}
+function camClose(){
+  CAM.on=false;camStop();
+  if(CAM.review){try{URL.revokeObjectURL(CAM.review.url)}catch(e){}CAM.review=null}
+  const c=$('#cam');c.classList.remove('on');c.innerHTML='';
+}
+function tickBeep(f){
+  ensureAudio();if(!ac)return;
+  try{const t0=ac.currentTime,os=ac.createOscillator(),g=ac.createGain();os.type='sine';os.frequency.value=f;
+    g.gain.setValueAtTime(.0001,t0);g.gain.exponentialRampToValueAtTime(.4,t0+.01);g.gain.exponentialRampToValueAtTime(.0001,t0+.15);
+    os.connect(g);g.connect(ac.destination);os.start(t0);os.stop(t0+.16)}catch(e){}
+}
+function reviewFromCanvas(cv){
+  cv.toBlob(b=>{
+    if(!b){CAM.err='Could not capture the photo. Try again.';camUpdate();return}
+    CAM.review={blob:b,url:URL.createObjectURL(b),w:cv.width,h:cv.height};camUpdate();
+  },'image/jpeg',.85);
+}
+function drawScaled(src,sw,sh,mirror){
+  const sc=Math.min(1,1280/Math.max(sw,sh)),w=Math.round(sw*sc),h=Math.round(sh*sc);
+  const cv=document.createElement('canvas');cv.width=w;cv.height=h;
+  const cx=cv.getContext('2d');
+  if(mirror){cx.translate(w,0);cx.scale(-1,1)}
+  cx.drawImage(src,0,0,w,h);return cv;
+}
+function camSnap(){
+  const v=document.getElementById('cam-v');
+  if(!v||!v.videoWidth){CAM.err='Camera isn’t ready yet. Try again in a moment.';camUpdate();return}
+  reviewFromCanvas(drawScaled(v,v.videoWidth,v.videoHeight,CAM.facing==='user'));
+}
+function camShot(){
+  if(CAM.cd){clearInterval(CAM.cd);CAM.cd=null;CAM.count=0;camUpdate();return}
+  if(!CAM.stream)return;
+  ensureAudio();
+  if(CAM.timer<=0){camSnap();return}
+  CAM.count=CAM.timer;camUpdate();
+  CAM.cd=setInterval(()=>{
+    CAM.count--;
+    if(CAM.count>0&&CAM.count<=3)tickBeep(660);
+    if(CAM.count<=0){clearInterval(CAM.cd);CAM.cd=null;tickBeep(1000);camSnap()}
+    camUpdate();
+  },1000);
+}
+function camFromFile(f){
+  if(!f)return;
+  const done=src=>{reviewFromCanvas(drawScaled(src,src.width,src.height,false))};
+  const fallback=()=>{
+    const u=URL.createObjectURL(f),im=new Image();
+    im.onload=()=>{done(im);URL.revokeObjectURL(u)};
+    im.onerror=()=>{CAM.err='That file couldn’t be opened as a photo.';camUpdate()};im.src=u;
+  };
+  if(window.createImageBitmap){createImageBitmap(f,{imageOrientation:'from-image'}).then(done,fallback)}else fallback();
+}
+function camKeep(){
+  if(!CAM.review||CAM.saving)return;
+  const pose=POSES[CAM.step];
+  CAM.shots[pose]={blob:CAM.review.blob,w:CAM.review.w,h:CAM.review.h};
+  try{URL.revokeObjectURL(CAM.review.url)}catch(e){}CAM.review=null;
+  if(CAM.step>=2){camFinish();return}
+  CAM.step++;camUpdate();
+}
+function camFinish(){
+  const poses=Object.keys(CAM.shots);
+  if(!poses.length){camClose();return}
+  CAM.saving=true;camUpdate();
+  poses.reduce((p,pose)=>p.then(()=>savePhoto(todayKey,pose,CAM.shots[pose].blob,CAM.shots[pose].w,CAM.shots[pose].h)),Promise.resolve()).then(()=>{
+    camClose();if(view==='phys')renderList();flash('Check-in saved on this phone.');
+  }).catch(()=>{CAM.saving=false;CAM.err='Could not save. Photo storage may be blocked in this browser.';camUpdate()});
+}
+function camSkip(){
+  if(CAM.step>=2){camFinish();return}
+  CAM.step++;camUpdate();
+}
+
+
 /* ---------- rendering ---------- */
 function renderHead(){
-  const seg='<div class="seg"><button class="'+(view==='work'?'on':'')+'" data-act="view" data-v="work" aria-pressed="'+(view==='work')+'">Workout</button><button class="'+(view==='prog'?'on':'')+'" data-act="view" data-v="prog" aria-pressed="'+(view==='prog')+'">Progress</button><button class="'+(view==='lock'?'on':'')+'" data-act="view" data-v="lock" aria-pressed="'+(view==='lock')+'">Locked in</button></div>';
-  let h='<div class="top-row">'+seg+(view==='work'?'<button class="edit-btn'+(editMode?' on':'')+'" data-act="edit" aria-pressed="'+editMode+'">'+(editMode?'Done':'Edit')+'</button>':'')+'</div>';
+  const seg='<div class="seg"><button class="'+(view==='work'?'on':'')+'" data-act="view" data-v="work" aria-pressed="'+(view==='work')+'">Workout</button><button class="'+(view==='prog'?'on':'')+'" data-act="view" data-v="prog" aria-pressed="'+(view==='prog')+'">Progress</button><button class="'+(view==='lock'?'on':'')+'" data-act="view" data-v="lock" aria-pressed="'+(view==='lock')+'">Locked in</button><button class="'+(view==='phys'?'on':'')+'" data-act="view" data-v="phys" aria-pressed="'+(view==='phys')+'">Physique</button></div>';
+  let h='<div class="top-row">'+seg+(view==='work'&&editMode?'<button class="edit-btn on" data-act="edit" aria-pressed="true">Done</button>':'')+'</div>';
   if(view==='work'){
     const tabs=TAB_DOW.map((dow,i)=>{
       const s=stats(i),d=tabDate(i),cls=['tab'];
@@ -570,7 +890,7 @@ function editHtml(plan){
     [60,75,90].map(n=>'<button class="chip'+(state.target===n?' red':'')+'" data-act="tgt" data-n="'+n+'" aria-pressed="'+(state.target===n)+'">'+n+' min</button>').join('')+
     '</div><div class="ed-note">The session clock turns red past this. It starts at your first set and stops at 100% or after 45 minutes with nothing logged.</div></div>';
   const np=state.planVer<2?'<button class="wide-btn dim" data-act="plan2">'+(armed==='plan2'?'Tap again to replace my plan':'Load the new v1.2 plan')+'</button>':'';
-  const bk='<div class="ex"><div class="lab">Backup</div><div class="ed-note">Your workouts live only on this phone. Copy a backup now and then and paste it into Notes. To move to a new phone, paste it back here.</div>'+
+  const bk='<div class="ex"><div class="lab">Backup</div><div class="ed-note">Your workouts live only on this phone. Photos are stored separately, so they aren’t in this text backup (use Share or save in Physique). Copy a backup now and then and paste it into Notes. To move to a new phone, paste it back here.</div>'+
     '<div class="ed-row"><button class="mini" style="flex:1" data-act="bkcopy">Copy backup</button>'+(navigator.share?'<button class="mini" style="flex:1" data-act="bkshare">Share backup</button>':'')+'</div>'+
     '<textarea class="bk-in" id="bk-in" placeholder="Paste a backup here to restore it" aria-label="Paste a backup to restore">'+esc(bkText)+'</textarea>'+
     '<button class="wide-btn dim" data-act="bkrestore">'+(armed==='restore'?'Tap again to replace everything on this phone':'Restore from pasted backup')+'</button></div>';
@@ -581,13 +901,21 @@ function editHtml(plan){
     '<button class="wide-btn dim" data-act="reset">'+(armed==='reset'?'Tap again to restore':'Restore original plan for this day')+'</button>'+bk;
 }
 function renderList(){
+  if(view!=='phys')avDestroy();
+  if(view==='phys'){
+    const old=document.getElementById('av');let keep=null;
+    if(AV.h&&old&&old.parentNode){keep=old;old.parentNode.removeChild(old)}
+    $('#list').innerHTML=physHtml();
+    if(keep){const ph=document.getElementById('av');if(ph)ph.parentNode.replaceChild(keep,ph);avUpdate()}else{avDestroy();physMount()}
+    return;
+  }
   if(view==='prog'){$('#list').innerHTML=progressHtml();return}
   if(view==='lock'){$('#list').innerHTML=lockHtml();return}
   const s=stats(sel),plan=state.plan[s.dow];
   $('#list').innerHTML=editMode?editHtml(plan):hintHtml()+planBannerHtml()+bannerHtml()+plan.ex.map(e=>cardHtml(e,s.key)).join('')+pumpHtml(s.key);
 }
 function renderFoot(){
-  $('#ft').innerHTML=(editMode||view!=='work'?'':'<button class="wide-btn dim" data-act="clear">'+(armed==='clear'?'Tap again to clear':'Clear this day’s sets')+'</button>')+'<div class="status" id="status">'+statusText()+'</div>';
+  $('#ft').innerHTML=(editMode||view!=='work'?'':'<button class="wide-btn dim" data-act="edit">Edit this day</button><button class="wide-btn dim" data-act="clear">'+(armed==='clear'?'Tap again to clear':'Clear this day’s sets')+'</button>')+'<div class="status" id="status">'+statusText()+'</div>';
 }
 function renderAll(){renderHead();renderList();renderFoot()}
 function arm(k){armed=k;clearTimeout(armT);armT=setTimeout(()=>{armed=null;renderList();renderFoot()},3000);renderList();renderFoot()}
@@ -687,8 +1015,27 @@ document.addEventListener('click',ev=>{
   const a=b.dataset.act,i=+b.dataset.i,id=b.dataset.id;
   let e,key,plan,l;
   switch(a){
-    case 'view':view=b.dataset.v;editMode=false;armed=null;renderAll();window.scrollTo(0,0);break;
+    case 'view':view=b.dataset.v;editMode=false;armed=null;renderAll();window.scrollTo(0,0);if(view==='phys'&&!PH.loaded)loadPhotos();break;
     case 'lkshare':shareLock();break;
+    case 'camstart':camOpen();break;
+    case 'camx':camClose();break;
+    case 'camflip':CAM.facing=CAM.facing==='user'?'environment':'user';CAM.stream=null;camUpdate();camStart();break;
+    case 'camtimer':CAM.timer=+b.dataset.n;camUpdate();break;
+    case 'camshot':camShot();break;
+    case 'camlib':{const f=document.getElementById('cam-f');if(f){f.value='';f.click()}break}
+    case 'camretake':if(CAM.review){try{URL.revokeObjectURL(CAM.review.url)}catch(x){}CAM.review=null;camUpdate()}break;
+    case 'camkeep':camKeep();break;
+    case 'camskip':camSkip();break;
+    case 'cpose':UI.cmpPose=b.dataset.p;UI.cmpA=null;UI.cmpB=null;renderList();break;
+    case 'phview':viewPhoto(b.dataset.k);break;
+    case 'vclose':{const v=$('#viewer');v.classList.remove('on');v.innerHTML='';break}
+    case 'phshare':sharePhotos(b.dataset.d);break;
+    case 'phdel':{
+      const d=b.dataset.d;
+      if(armed==='phdel'+d){armed=null;delCheckin(d).then(()=>{renderList();flash('Check-in deleted.')}).catch(()=>flash('Could not delete.'))}
+      else arm('phdel'+d);
+      break;
+    }
     case 'plan2':
       if(armed==='plan2'){armed=null;loadNewPlan();renderAll();window.scrollTo(0,0);flash('New plan loaded.')}else arm('plan2');
       break;
@@ -797,6 +1144,18 @@ document.addEventListener('input',ev=>{
     change();
   }else if(t.classList.contains('bk-in')){
     bkText=t.value;
+  }else if(t.classList.contains('bd-in')){
+    const f=t.dataset.f,v=t.value.replace(/[^0-9.]/g,'').slice(0,6);if(v!==t.value)t.value=v;
+    const bb=dayBody(todayKey,true);
+    if(v)bb[f]=v;else delete bb[f];
+    if(!Object.keys(bb).length)delete state.body[todayKey];
+    change();avUpdate();
+    const el=$('#bd-sum');if(el)el.innerHTML=bodySumHtml();
+  }else if(t.classList.contains('name-in')){
+    state.name=t.value.slice(0,14).trim()||'Leo';change();
+    const el=document.getElementById('av-name');if(el)el.textContent=state.name;avUpdate();
+  }else if(t.id==='cmp-r'){
+    const el=document.getElementById('cmp');if(el)el.style.setProperty('--pos',t.value+'%');
   }
 });
 document.addEventListener('keydown',ev=>{
@@ -806,6 +1165,8 @@ document.addEventListener('keydown',ev=>{
 });
 document.addEventListener('change',ev=>{
   const t=ev.target;
+  if(t.id==='cam-f'){camFromFile(t.files&&t.files[0]);return}
+  if(t.id==='cmp-a'||t.id==='cmp-b'){if(t.id==='cmp-a')UI.cmpA=t.value;else UI.cmpB=t.value;renderList();return}
   if(!(t.classList&&t.classList.contains('ed')))return;
   const plan=state.plan[TAB_DOW[sel]],f=t.dataset.f,i=+t.dataset.i,v=t.value;
   if(f==='title'){plan.title=v.trim()||plan.title;renderHead()}
@@ -820,7 +1181,8 @@ document.addEventListener('change',ev=>{
 });
 setInterval(renderClock,1000);
 document.addEventListener('visibilitychange',()=>{
-  if(document.visibilityState==='visible'){tick();renderClock();if(T.state==='run')wake()}
+  if(document.visibilityState==='hidden'&&CAM.on)camStop();
+  if(document.visibilityState==='visible'){tick();renderClock();if(T.state==='run')wake();if(CAM.on&&!CAM.review&&!CAM.stream)camStart()}
 });
 
 renderAll();

@@ -1,11 +1,13 @@
 /* Redline service worker: keeps the app working with no signal.
    Bump CACHE whenever any file changes so phones pick up the new version. */
-const CACHE = 'redline-v3';
+const CACHE = 'redline-v4';
 const ASSETS = [
   './',
   './index.html',
   './app.css',
   './app.js',
+  './avatar.js',
+  './vendor/three.min.js',
   './manifest.webmanifest',
   './icons/apple-touch-icon.png',
   './icons/icon-192.png',
