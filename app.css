@@ -280,3 +280,6 @@ textarea.note-in,textarea.bk-in{width:100%;min-height:84px;background:#0b0b0b;bo
 #viewer img{flex:1;min-height:0;width:100%;object-fit:contain}
 .v-x{align-self:flex-end;margin:calc(10px + env(safe-area-inset-top,0px)) 14px 8px;min-height:44px;padding:0 16px;border:1px solid #3a3a3a;border-radius:10px;font:700 14px var(--body)}
 .v-cap{padding:12px;text-align:center;font:700 14px var(--body);letter-spacing:.06em}
+
+.av-card.flat{padding:0 0 14px}
+.av-card.flat .av-over{position:static;padding:14px 14px 4px}

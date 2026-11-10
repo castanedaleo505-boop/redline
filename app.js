@@ -1,7 +1,7 @@
 /* Redline. One file, no libraries. All data stays in this phone's localStorage. */
 (function(){
 'use strict';
-const APP_VERSION='1.3';
+const APP_VERSION='1.3.1';
 const LS='redline.v1';
 const HINT_KEY='redline.hint';
 const TAB_DOW=[1,2,3,4,5,6,0];
@@ -495,7 +495,6 @@ const MUSCLE_MAP=[
 const muscleOf=n=>{for(let i=0;i<MUSCLE_MAP.length;i++)if(MUSCLE_MAP[i][0].test(n))return MUSCLE_MAP[i][1];return []};
 const TITLES=['Rookie','Regular','Grinder','Gym Rat','Iron Head','Menace','Feral','Unhinged','Final Boss','Mythic','Redline'];
 const PH={list:[],loaded:false,loading:false,failed:false,urls:{}};
-const AV={h:null,lib:null,t:null};
 const CAM={on:false,step:0,facing:'user',timer:10,stream:null,shots:{},review:null,count:0,cd:null,err:'',saving:false};
 let DBH=null;
 
@@ -578,28 +577,6 @@ function levelInfo(){
   const total=totalSets(),n=1+Math.floor(Math.sqrt(total/30)),lo=30*(n-1)*(n-1),hi=30*n*n;
   return {n:n,total:total,title:TITLES[Math.min(n-1,TITLES.length-1)],next:hi,pct:Math.round((total-lo)*100/(hi-lo))};
 }
-function avParams(){
-  const meas={};['sh','ch','wa','ar','th','ca'].forEach(f=>{const l=bodyLatest(f);if(l)meas[f]=l.v});
-  const wm=weekMuscle(),glow={};MUS.forEach(g=>{glow[g]=wm[g].plan?Math.min(1,wm[g].done/wm[g].plan):0});
-  return {meas:meas,glow:glow,name:state.name};
-}
-function loadScript(src){return new Promise((res,rej)=>{const s=document.createElement('script');s.src=src;s.onload=res;s.onerror=()=>rej(new Error('load '+src));document.head.appendChild(s)})}
-function loadAvatarLib(){
-  if(!AV.lib)AV.lib=loadScript('vendor/three.min.js').then(()=>loadScript('avatar.js'));
-  return AV.lib;
-}
-function avDestroy(){if(AV.h){AV.h.destroy();AV.h=null}}
-function avUpdate(){clearTimeout(AV.t);AV.t=setTimeout(()=>{if(AV.h)AV.h.update(avParams())},180)}
-function physMount(){
-  const cv=document.getElementById('av');if(!cv)return;
-  const note=document.getElementById('av-note');
-  loadAvatarLib().then(()=>{
-    if(view!=='phys'||document.getElementById('av')!==cv||AV.h)return;
-    AV.h=window.RedlineAvatar?window.RedlineAvatar.create(cv,avParams()):null;
-    if(!AV.h&&note)note.textContent='3D is not available in this browser. Your muscle bars still work.';
-  }).catch(()=>{if(note)note.textContent='Could not load the 3D character. Check your connection once, then it works offline.'});
-}
-
 /* compare + history markup */
 function compareHtml(){
   const pose=UI.cmpPose||'front';
@@ -626,11 +603,11 @@ function historyHtml(){
 }
 function physHtml(){
   const lv=levelInfo(),wm=weekMuscle();
-  let h='<div class="av-card"><canvas id="av" aria-label="Your Redline character. Drag to rotate."></canvas>'+
+  let h='<div class="av-card flat">'+
     '<div class="av-over"><div class="av-lv"><span>Level</span><b>'+lv.n+'</b></div><div class="av-id"><div class="av-name" id="av-name">'+esc(state.name)+'</div><div class="av-ti">'+esc(lv.title)+'</div></div></div>'+
     '<div class="av-xp"><i style="width:'+lv.pct+'%"></i></div><div class="av-xt"><span>'+lv.total+' lifetime sets</span><span>'+(lv.next-lv.total)+' to level '+(lv.n+1)+'</span></div>'+
     '<div class="ed-f av-nm"><label for="nm-in">Name on your character</label><input id="nm-in" class="name-in" maxlength="14" autocomplete="off" value="'+esc(state.name)+'"></div>'+
-    '<div class="ed-note" id="av-note">Drag to rotate. Size follows your tape numbers. Red glow is how much of each muscle’s sets you’ve finished this week.</div></div>';
+    '<div class="ed-note">Your level comes from lifetime sets finished. The bars below show how much of each muscle’s planned sets you’ve done this week.</div></div>';
   h+='<div class="sec-t">This week by muscle</div><div class="mus">'+MUS.map(g=>{
     const x=wm[g],p=x.plan?Math.min(100,Math.round(x.done*100/x.plan)):0;
     return '<div class="mrow"><span>'+MUS_L[g]+'</span><div class="mb"><i style="width:'+p+'%"></i></div><b>'+fnum(x.done)+' / '+fnum(x.plan)+'</b></div>';
@@ -901,14 +878,7 @@ function editHtml(plan){
     '<button class="wide-btn dim" data-act="reset">'+(armed==='reset'?'Tap again to restore':'Restore original plan for this day')+'</button>'+bk;
 }
 function renderList(){
-  if(view!=='phys')avDestroy();
-  if(view==='phys'){
-    const old=document.getElementById('av');let keep=null;
-    if(AV.h&&old&&old.parentNode){keep=old;old.parentNode.removeChild(old)}
-    $('#list').innerHTML=physHtml();
-    if(keep){const ph=document.getElementById('av');if(ph)ph.parentNode.replaceChild(keep,ph);avUpdate()}else{avDestroy();physMount()}
-    return;
-  }
+  if(view==='phys'){$('#list').innerHTML=physHtml();return}
   if(view==='prog'){$('#list').innerHTML=progressHtml();return}
   if(view==='lock'){$('#list').innerHTML=lockHtml();return}
   const s=stats(sel),plan=state.plan[s.dow];
@@ -1149,11 +1119,11 @@ document.addEventListener('input',ev=>{
     const bb=dayBody(todayKey,true);
     if(v)bb[f]=v;else delete bb[f];
     if(!Object.keys(bb).length)delete state.body[todayKey];
-    change();avUpdate();
+    change();
     const el=$('#bd-sum');if(el)el.innerHTML=bodySumHtml();
   }else if(t.classList.contains('name-in')){
     state.name=t.value.slice(0,14).trim()||'Leo';change();
-    const el=document.getElementById('av-name');if(el)el.textContent=state.name;avUpdate();
+    const el=document.getElementById('av-name');if(el)el.textContent=state.name;
   }else if(t.id==='cmp-r'){
     const el=document.getElementById('cmp');if(el)el.style.setProperty('--pos',t.value+'%');
   }
