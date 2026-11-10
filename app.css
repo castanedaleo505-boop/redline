@@ -193,3 +193,22 @@ textarea.note-in,textarea.bk-in{width:100%;min-height:84px;background:#0b0b0b;bo
 .lk-hist b{font:700 16px var(--display);font-variant-numeric:tabular-nums}
 .lk-hist span{font:500 11px var(--body);color:var(--mute)}
 @media (prefers-reduced-motion:reduce){.lk-card.hot{animation:none}}
+
+/* v1.2: clock, pump, boss, plan banner */
+.clock{margin-top:6px;font:600 13px var(--body);letter-spacing:.06em;font-variant-numeric:tabular-nums;color:var(--mute)}
+.clock.hide{display:none}
+.clock.run{color:var(--fg)}
+.clock.ok{color:var(--fg)}
+.clock.over{color:var(--red-hi)}
+.pump{border:1px solid var(--edge);border-radius:14px;padding:14px;background:var(--card);display:flex;flex-direction:column;gap:10px}
+.pump-b{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
+.pbtn{min-height:48px;border:1px solid var(--edge);border-radius:10px;background:#0b0b0b;font:800 24px var(--display)}
+.pbtn.on{background:var(--red);border-color:var(--red)}
+.boss{border:1px solid var(--edge);border-radius:14px;padding:16px;background:var(--card);margin-bottom:12px}
+.boss-n{font:800 32px/1.05 var(--display);letter-spacing:.03em;text-transform:uppercase;margin-top:4px}
+.boss-bar{height:16px;background:#1c1c1c;border-radius:999px;margin:10px 0 6px;overflow:hidden}
+.boss-bar i{display:block;height:100%;background:var(--red);border-radius:999px;transition:width .5s ease}
+.boss-hp{display:flex;justify-content:space-between;font:600 12px var(--body);letter-spacing:.08em;text-transform:uppercase;color:var(--mute);font-variant-numeric:tabular-nums}
+.boss.dead{border-color:var(--red)}
+.boss.dead .boss-n{color:var(--red-hi)}
+.banner .mini{border-color:#fff;color:#fff;align-self:flex-start}

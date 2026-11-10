@@ -1,7 +1,7 @@
 /* Redline. One file, no libraries. All data stays in this phone's localStorage. */
 (function(){
 'use strict';
-const APP_VERSION='1.1';
+const APP_VERSION='1.2';
 const LS='redline.v1';
 const HINT_KEY='redline.hint';
 const TAB_DOW=[1,2,3,4,5,6,0];
@@ -25,59 +25,57 @@ const nk=n=>String(n).trim().toLowerCase();
 /* ---------- default plan ---------- */
 function X(name,sets,reps,rest,nw){return {name:name,sets:sets,reps:reps,rest:rest,nw:!!nw}}
 function defaultPlan(){
+  const F=' to failure';
   const p={
     4:{title:'Day 1 · Shoulders + Arms (heavy)',ex:[
-      X('Seated DB overhead press',4,'6-8',150),X('Lateral raise (cable or DB)',5,'12-15',60),X('Rear delt fly',4,'15',60),
-      X('Barbell curl',4,'8-10',90),X('Incline DB curl',3,'10-12',75),X('Hammer curl',3,'10',60),
-      X('Skull crusher / EZ bar',4,'10',90),X('Rope pushdown',3,'12',60),X('Overhead cable triceps ext.',3,'12',60),X('Cable curl pump (burnout)',2,'20',45)]},
+      X('Machine shoulder press',3,'6-8 (last set to failure)',120),X('Lateral raise (cable)',4,'12-15'+F,60),X('Reverse pec deck',3,'15'+F,60),
+      X('Barbell curl',3,'8-10'+F,90),X('Bayesian cable curl',3,'10-12'+F,60),
+      X('Dips',3,'8-12'+F,90),X('Single-arm cable pushdown',3,'12-15'+F,60)]},
     5:{title:'Day 2 · Chest + Back + Biceps',ex:[
-      X('Flat bench press',4,'6-8',180),X('Incline DB press',3,'8-10',120),X('Cable fly',3,'12-15',75),
-      X('Pull-ups (add weight at 15+)',4,'8-12',150),X('Barbell or chest-supported row',4,'8-10',120),X('Lat pulldown / cable row',3,'10-12',90),
-      X('Face pulls',3,'15',60),X('Lateral raise',3,'15',60),X('Preacher curl',3,'10-12',75),X('Cable curl',2,'15',60)]},
-    6:{title:'Day 3 · Legs + Calves + Arm Finisher',ex:[
-      X('Squat',4,'5-6',210),X('Romanian deadlift',3,'8',150),X('Leg press',3,'10-12',120),
-      X('Leg curl',3,'12',75),X('Walking lunges',2,'12 each',90),X('Standing calf raise',5,'12-15',60),
-      X('Seated calf raise',3,'15-20',60),X('Lateral raise',3,'15-20',60),X('Cable curl',3,'12',60),X('Pushdown',3,'12',60)]},
+      X('Bench press',4,'6-8 (last set to failure)',180),X('Incline machine press',3,'8-10'+F,90),
+      X('Pull-ups',4,'8-12'+F,120),X('Seated cable row',3,'10-12'+F,90),
+      X('Lateral raise (cable)',3,'15'+F,60),X('Preacher curl',3,'10-12'+F,60),X('Single-arm cable pushdown',3,'12-15'+F,60)]},
+    6:{title:'Day 3 · Legs + Calves',ex:[
+      X('Squat',4,'5-6 (last set to failure)',210),X('Hack squat',3,'8-10'+F,150),
+      X('Seated leg curl',4,'10-12'+F,75),X('Hip abduction machine',3,'15'+F,60),X('Standing calf raise',5,'12-15'+F,60)]},
     0:{title:'Off · No Gym',ex:[
       X('Long easy walk',1,'30-60 min',0,true),X('Stretch (optional)',1,'10 min',0,true)]},
     1:{title:'Day 4 · Shoulders + Arms (volume)',ex:[
-      X('Machine or Arnold press',4,'8-10',120),X('Lateral raise (last set: partials)',5,'15-20',60),X('Reverse pec deck',4,'15',60),
-      X('EZ bar curl',4,'10',90),X('Bayesian cable curl',3,'12',75),X('Rope hammer curl',3,'12',60),
-      X('Close-grip bench',3,'8',120),X('Pushdown',3,'12-15',60),X('Overhead DB triceps ext.',3,'12',75),X('Reverse curl (forearms)',3,'12',60)]},
+      X('Machine shoulder press',3,'8-10'+F,90),X('Lateral raise (cable)',5,'15-20'+F+' + partials',60),X('Reverse pec deck',3,'15'+F,60),
+      X('EZ bar curl',3,'10'+F,90),X('Cable curl',3,'12-15'+F,60),
+      X('Machine dips',3,'10-12'+F,90),X('Single-arm cable pushdown',3,'12-15'+F,60)]},
     2:{title:'Day 5 · Back + Chest + Biceps',ex:[
-      X('Weighted pull-ups',4,'6-10',150),X('Chest-supported row',4,'10',120),X('One-arm cable row',3,'12',90),
-      X('Straight-arm pulldown',3,'12',75),X('Bench press',4,'5-6',180),X('Incline cable fly',3,'12-15',75),
-      X('Dips',3,'10',90),X('Rear delt fly',3,'15',60),X('Lateral raise',3,'15',60),X('Incline curl',3,'12',75),X('Hammer curl',3,'10',60)]},
-    3:{title:'Day 6 · Legs + Calves + Arm Pump',ex:[
-      X('Hack squat or front squat',4,'8',180),X('Leg extension',3,'12-15',75),X('Hamstring curl',3,'12',75),
-      X('Bulgarian split squat',3,'10 each',120),X('Standing calf raise',5,'12-15',60),X('Calf raise (burnout)',3,'20',45),
-      X('Lateral raise',4,'15-20',60),X('Superset: cable curl + pushdown',3,'15 + 15',75),X('Superset: hammer curl + OH ext.',2,'12 + 12',75)]}
+      X('Weighted pull-ups',4,'6-10 (last set to failure)',150),X('Chest-supported row',3,'10-12'+F,90),
+      X('Machine chest press',4,'8-10'+F,120),X('Pec deck',3,'12-15'+F,60),
+      X('Lateral raise (cable)',3,'15'+F,60),X('Cable curl',3,'12-15'+F,60),X('Single-arm cable pushdown',3,'12-15'+F,60)]},
+    3:{title:'Day 6 · Legs + Calves',ex:[
+      X('Pendulum squat',4,'8-10'+F,150),X('Leg extension',3,'12-15'+F,60),
+      X('Lying leg curl',4,'10-12'+F,75),X('Hip adduction machine',3,'15'+F,60),X('Seated calf raise',5,'15-20'+F,60)]}
   };
-  Object.keys(p).forEach(k=>{p[k].ex.forEach((e,i)=>{e.id='d'+k+'_'+i})});
+  Object.keys(p).forEach(k=>{p[k].ex.forEach((e,i)=>{e.id='p2_'+k+'_'+i})});
   return p;
 }
 
 /* ---------- swap suggestions ---------- */
 const ALTS=[
-  [/leg extension/i,['Sissy squat','Leg press (high reps)','Goblet squat']],
-  [/leg curl|hamstring/i,['Seated leg curl','Lying leg curl','Stiff-leg deadlift','Nordic curl']],
-  [/calf/i,['Seated calf raise','Standing calf raise','Leg press calf raise','Single-leg calf raise']],
-  [/romanian|deadlift/i,['DB Romanian deadlift','Good morning','Back extension','Hip thrust']],
-  [/squat|hack|leg press|lunge/i,['Leg press','Hack squat','Goblet squat','Smith machine squat','Walking lunges']],
+  [/leg extension/i,['Hack squat','Pendulum squat','Sissy squat']],
+  [/leg curl|hamstring/i,['Seated leg curl','Lying leg curl','Romanian deadlift','Nordic curl']],
+  [/hip (ab|ad)duction|glute|hip thrust/i,['Hip abduction machine','Hip adduction machine','Hip thrust machine','Glute kickback machine','Cable glute kickback']],
+  [/calf/i,['Standing calf raise','Seated calf raise','Smith machine calf raise','Single-leg calf raise']],
+  [/romanian|deadlift/i,['Romanian deadlift','Good morning','Back extension','Hip thrust machine']],
+  [/squat|hack|pendulum/i,['Squat','Hack squat','Pendulum squat','Smith machine squat','Leg extension']],
   [/superset/i,[]],
-  [/lateral raise/i,['DB lateral raise','Cable lateral raise','Machine lateral raise','Leaning cable lateral raise']],
+  [/lateral raise/i,['Lateral raise (cable)','Machine lateral raise','DB lateral raise','Leaning cable lateral raise']],
   [/rear delt|reverse pec/i,['Reverse pec deck','Rear delt cable fly','Face pulls','Band pull-apart']],
   [/face pull/i,['Rear delt fly','Reverse pec deck','Band pull-apart']],
-  [/close-grip/i,['Dips','Rope pushdown','Close-grip push-ups']],
-  [/dips/i,['Assisted dips','Bench dips','Close-grip push-ups','Rope pushdown']],
-  [/bench|chest press|incline.*press/i,['Machine chest press','DB bench press','Smith machine bench','Push-ups']],
-  [/fly/i,['Pec deck','Cable fly','DB fly','Machine fly']],
-  [/overhead press|arnold|shoulder press/i,['Machine shoulder press','Standing DB press','Barbell overhead press','Smith machine shoulder press']],
-  [/pull-up|pulldown|chin/i,['Lat pulldown','Assisted pull-ups','Chin-ups','Neutral-grip pulldown']],
-  [/row/i,['Chest-supported row','Cable row','One-arm DB row','Machine row','T-bar row']],
+  [/dips|pushdown|tricep/i,['Dips','Single-arm cable pushdown','Machine pushdown','Machine dips']],
+  [/bench|chest press|incline.*press/i,['Bench press','Machine chest press','Incline machine press','Smith machine bench','Push-ups']],
+  [/fly|pec deck/i,['Pec deck','Cable fly','Machine fly','DB fly']],
+  [/overhead press|arnold|shoulder press/i,['Machine shoulder press','Seated DB overhead press','Barbell overhead press','Smith machine shoulder press','Arnold press']],
+  [/pull-up|pulldown|chin/i,['Pull-ups','Lat pulldown','Assisted pull-ups','Chin-ups','Neutral-grip pulldown']],
+  [/row/i,['Seated cable row','Chest-supported row','Machine row','One-arm DB row','T-bar row']],
   [/reverse curl/i,['Reverse EZ bar curl','Wrist curl','Hammer curl']],
-  [/curl/i,['EZ bar curl','Cable curl','Preacher curl','DB curl','Hammer curl','Incline DB curl']],
-  [/pushdown|skull|tricep|ext/i,['Rope pushdown','Skull crushers','Overhead cable triceps ext.','Overhead DB triceps ext.','Dips']]
+  [/curl/i,['Barbell curl','EZ bar curl','Cable curl','Bayesian cable curl','Preacher curl','Hammer curl']]
 ];
 function alternates(name){
   for(const r of ALTS){if(r[0].test(name))return r[1].filter(a=>nk(a)!==nk(name)).slice(0,5)}
@@ -87,13 +85,15 @@ function alternates(name){
 /* ---------- state + storage ---------- */
 const now=new Date();
 const todayKey=dkey(now);
-function freshState(){return {v:2,rev:0,plan:defaultPlan(),log:{},auto:true,notes:{},names:{},blockLen:6,block:null}}
+function freshState(){return {v:2,rev:0,plan:defaultPlan(),planVer:2,target:75,log:{},auto:true,notes:{},names:{},blockLen:6,block:null}}
 function migrate(s){
   if(!s||typeof s!=='object')s=freshState();
   const f=freshState();
   if(!s.plan||typeof s.plan!=='object')s.plan={};
   Object.keys(f.plan).forEach(k=>{if(!s.plan[k]||!Array.isArray(s.plan[k].ex))s.plan[k]=f.plan[k]});
   if(!s.log||typeof s.log!=='object')s.log={};
+  if(typeof s.planVer!=='number')s.planVer=1;
+  if([60,75,90].indexOf(s.target)<0)s.target=75;
   if(typeof s.auto!=='boolean')s.auto=true;
   if(!s.notes||typeof s.notes!=='object')s.notes={};
   if(!s.names||typeof s.names!=='object')s.names={};
@@ -159,6 +159,7 @@ function suggest(key,name){
 }
 function stats(i){
   const dow=TAB_DOW[i],key=dkey(tabDate(i));let t=0,d=0;
+  const lf=state.log[key];if(lf&&lf.f)return {t:lf.f.t,d:lf.f.d,pct:lf.f.t?Math.round(lf.f.d*100/lf.f.t):0,key:key,dow:dow};
   state.plan[dow].ex.forEach(e=>{t+=nsets(key,e);d+=getDone(key,e).filter(Boolean).length});
   return {t:t,d:d,pct:t?Math.round(d*100/t):0,key:key,dow:dow};
 }
@@ -258,11 +259,13 @@ function progressHtml(){
 }
 
 
-/* ---------- locked in: streak, weekly score, recap ---------- */
+/* ---------- locked in: streak, weekly score, boss, session clock, pump ---------- */
 const HIT=80;
 const parseKey=k=>{const p=k.split('-');return new Date(+p[0],+p[1]-1,+p[2])};
 const addDays=(d,n)=>new Date(d.getFullYear(),d.getMonth(),d.getDate()+n);
 function dayStat(key){
+  const l0=state.log[key];
+  if(l0&&l0.f)return {off:false,t:l0.f.t,d:l0.f.d,pct:l0.f.t?Math.round(l0.f.d*100/l0.f.t):0,wl:l0.f.wl,wt:l0.f.wt};
   const pl=state.plan[parseKey(key).getDay()];
   if(!pl||!pl.ex.length||/^off\b/i.test(pl.title))return {off:true,t:0,d:0,pct:0,wl:0,wt:0};
   let t=0,d=0,wt=0,wl=0;
@@ -273,10 +276,39 @@ function dayStat(key){
   });
   return {off:false,t:t,d:d,pct:t?Math.round(d*100/t):0,wl:wl,wt:wt};
 }
-function weekStat(mon){
-  let t=0,d=0,wt=0,wl=0,hit=0,sess=0;const days=[],missed=[];
+/* session clock: starts at the first set, ends at 100% or after 45 minutes with no activity */
+function sessInfo(key){
+  const l=state.log[key];if(!l||!l.st)return null;
+  const endAt=l.en||((Date.now()-(l.la||l.st)>45*60000)?(l.la||l.st):null);
+  return {ms:Math.max(0,(endAt||Date.now())-l.st),running:!endAt};
+}
+function clockState(key){
+  const tg=state.target,si=sessInfo(key);
+  if(!si){
+    if(key===todayKey)return {t:'Clock starts with your first set · target '+tg+' min',c:''};
+    return {t:'',c:'hide'};
+  }
+  const mins=si.ms/60000;
+  if(si.running)return {t:'Session '+fmt(si.ms/1000)+' / '+tg+':00',c:mins>tg?'over':'run'};
+  const m=Math.round(mins);
+  return {t:'Finished in '+m+' min · '+(mins<=tg?'under target':(Math.round(mins-tg)+' min over target')),c:mins<=tg?'ok':'over'};
+}
+function renderClock(){
+  const el=document.getElementById('clk');if(!el)return;
+  const c=clockState(curKey());el.textContent=c.t;el.className='clock '+c.c;
+}
+function touchSession(key,anyDone,pct){
+  if(key!==todayKey)return;
+  const l=dayLog(key,true),n=Date.now();
+  if(!anyDone){delete l.st;delete l.la;delete l.en;return}
+  if(!l.st)l.st=n;
+  l.la=n;
+  if(pct>=100)l.en=n;else delete l.en;
+}
+function weekStat(mon,m){
+  let t=0,d=0,wt=0,wl=0,hit=0,sess=0,pn=0,ps=0;const days=[],missed=[],mins=[];
   for(let i=0;i<7;i++){
-    const dt=addDays(mon,i),k=dkey(dt),s=dayStat(k);
+    const dt=addDays(mon,i),k=dkey(dt),s=dayStat(k),l=state.log[k];
     let st;
     if(s.off)st='off';
     else if(s.pct>=HIT)st='hit';
@@ -286,15 +318,19 @@ function weekStat(mon){
     if(st==='miss'||st==='part')missed.push(LONG[dt.getDay()].slice(0,3));
     days.push({k:k,l:['M','T','W','T','F','S','S'][i],st:st});
     if(!s.off){t+=s.t;d+=s.d;wt+=s.wt;wl+=s.wl;if(s.pct>=HIT)hit++;if(s.d>0)sess++}
+    if(l&&l.pump){pn++;ps+=l.pump}
+    const si=sessInfo(k);if(si&&!si.running&&si.ms>5*60000)mins.push(si.ms/60000);
   }
   const score=Math.round(100*(0.7*(t?d/t:0)+0.3*(wt?wl/wt:0)));
-  const m=allSeries(),from=days[0].k,to=days[6].k;let prs=0;
+  const from=days[0].k,to=days[6].k;let prs=0;
   Object.keys(m).forEach(k=>{let best=0;m[k].forEach(p=>{if(best>0&&p.v>best&&p.d>=from&&p.d<=to)prs++;if(p.v>best)best=p.v})});
   const planned=days.filter(x=>x.st!=='off').length;
-  return {score:score,sets:d,setsTotal:t,hit:hit,planned:planned,sess:sess,wl:wl,wt:wt,prs:prs,days:days,missed:missed,from:from};
+  const avg=mins.length?mins.reduce((a,b)=>a+b,0)/mins.length:0;
+  return {score:score,sets:d,setsTotal:t,hit:hit,planned:planned,sess:sess,wl:wl,wt:wt,prs:prs,days:days,missed:missed,from:from,
+    mins:mins,avg:avg,under:mins.filter(x=>x<=state.target).length,pump:pn?ps/pn:0,pumpN:pn};
 }
 function streakInfo(){
-  const ks=Object.keys(state.log).filter(k=>{const l=state.log[k];return l&&l.d&&Object.keys(l.d).some(id=>/1/.test(l.d[id]))}).sort();
+  const ks=Object.keys(state.log).filter(k=>{const l=state.log[k];return l&&(l.f||(l.d&&Object.keys(l.d).some(id=>/1/.test(l.d[id]))))}).sort();
   if(!ks.length)return {cur:0,best:0};
   let cur=0,best=0;
   for(let dt=parseKey(ks[0]);dkey(dt)<=todayKey;dt=addDays(dt,1)){
@@ -304,6 +340,40 @@ function streakInfo(){
     else if(k!==todayKey)cur=0;
   }
   return {cur:cur,best:best};
+}
+function bestPumpDay(){
+  const g={};
+  Object.keys(state.log).forEach(k=>{
+    const l=state.log[k];if(!l||!l.pump)return;
+    const dow=parseKey(k).getDay(),pl=state.plan[dow];if(!pl)return;
+    const nm=pl.title.split(' · ')[0];
+    (g[nm]=g[nm]||{s:0,n:0});g[nm].s+=l.pump;g[nm].n++;
+  });
+  let best=null;
+  Object.keys(g).forEach(k=>{const a=g[k].s/g[k].n;if(!best||a>best.a)best={k:k,a:a,n:g[k].n}});
+  return best;
+}
+const PUMP_TXT=['','Flat. Did you even lift?','Mild. Respectable.','Solid pump.','Sleeves are tight. Veins reporting for duty.','Skin-splitting. Seek a bigger shirt.'];
+function pumpHtml(key){
+  const s=dayStat(key);if(s.off)return '';
+  const l=state.log[key],cur=(l&&l.pump)||0;
+  return '<div class="pump"><div class="lab">Pump check</div><div class="pump-b">'+[1,2,3,4,5].map(n=>'<button class="pbtn'+(cur===n?' on':'')+'" data-act="pump" data-v="'+n+'" aria-pressed="'+(cur===n)+'" aria-label="Pump '+n+' out of 5">'+n+'</button>').join('')+'</div>'+
+    '<div class="ed-note">'+esc(PUMP_TXT[cur]||'End of session: how did the muscles feel? 1 flat, 5 skin-splitting.')+'</div></div>';
+}
+const BOSSES=[
+  ['The Snooze Button','Has beaten you before. Does not remember your name.'],
+  ['Couch Goblin','Keeps your seat warm. Takes it personally.'],
+  ['Skip-Day Gremlin','Whispers “just one rest day.” Do not listen.'],
+  ['The Motivation Thief','Steals your drive around 4 p.m. every day.'],
+  ['Soreness Demon','Feeds on excuses. Allergic to sets.'],
+  ['Phone-Scroll Wraith','Eats 40 minutes between sets. Quietly.'],
+  ['Chicken-Leg Spirit','Haunts anyone who skips the lower half.'],
+  ['The Plateau','Was here before you. Refuses to leave.']
+];
+function bossFor(wk,mon){
+  const wn=Math.floor(dayDiff('2026-01-05',dkey(mon))/7),b=BOSSES[((wn%BOSSES.length)+BOSSES.length)%BOSSES.length];
+  const max=Math.max(1,Math.ceil(wk.setsTotal*0.9)),dmg=Math.min(wk.sets,max),hp=max-dmg;
+  return {name:b[0],taunt:b[1],max:max,hp:hp,dmg:dmg,slain:wk.setsTotal>0&&wk.sets>=max};
 }
 const TIERS=[
   [0,'Ghost','No sets logged yet. The weights are starting rumors about you.'],
@@ -324,7 +394,7 @@ function streakLine(n){
   return 'You’re not training anymore. You’re a lifestyle brand.';
 }
 function lockHtml(){
-  const wk=weekStat(monday),lw=weekStat(addDays(monday,-7)),sk=streakInfo(),tr=tierFor(wk.score);
+  const m=allSeries(),wk=weekStat(monday,m),lw=weekStat(addDays(monday,-7),m),sk=streakInfo(),tr=tierFor(wk.score);
   const lastHas=lw.sets>0;
   const diff=lastHas?wk.score-lw.score:null;
   const cls=wk.score>=90?' hot':(wk.score>=75?' warm':'');
@@ -334,15 +404,29 @@ function lockHtml(){
     '<div class="lk-bar" role="img" aria-label="Locked in score '+wk.score+' out of 100"><i style="width:'+wk.score+'%"></i>'+ticks+'</div>'+
     '<div class="lk-tier">'+esc(tr[1])+'</div><p class="lk-q">'+esc(tr[2])+'</p>'+
     '<p class="lk-how">Score = 70% sets finished + 30% lifts with a weight logged. Full week resets Monday.</p></div>';
+  /* weekly boss */
+  const bs=bossFor(wk,monday);let slain=0;
+  for(let i=1;i<=12;i++){const w=weekStat(addDays(monday,-7*i),m);if(w.setsTotal>0&&w.sets>=Math.max(1,Math.ceil(w.setsTotal*0.9)))slain++}
+  const pct=bs.max?Math.round(bs.hp*100/bs.max):0;
+  const bt=bs.slain?'Slain. Loot: nothing. But you look different.':(pct>66?bs.taunt:(pct>33?'It’s bleeding. Keep going.':'It’s begging now. Do not make eye contact. Finish it.'));
+  h+='<div class="boss'+(bs.slain?' dead':'')+'"><div class="lk-lab">Weekly boss</div><div class="boss-n">'+esc(bs.name)+(bs.slain?' · slain':'')+'</div>'+
+    '<div class="boss-bar" role="img" aria-label="Boss health '+bs.hp+' of '+bs.max+'"><i style="width:'+pct+'%"></i></div>'+
+    '<div class="boss-hp"><span>HP '+bs.hp+' / '+bs.max+'</span><span>'+bs.dmg+' sets of damage</span></div>'+
+    '<p class="lk-q">'+esc(bt)+'</p><p class="lk-how">Every finished set is 1 damage. Finish 90% of the week’s sets to win. Bosses slain, last 12 weeks: '+slain+'.</p></div>';
   h+='<div class="lk-streak"><div class="lk-flame" aria-hidden="true">🔥</div><div class="lk-sn"><b>'+sk.cur+'</b><span>'+(sk.cur===1?'session':'sessions')+' in a row</span></div>'+
     '<div class="lk-sb"><b>'+sk.best+'</b><span>best</span></div></div>'+
     '<p class="lk-q pad">'+esc(streakLine(sk.cur))+' <span class="lk-fine">A session counts at '+HIT+'% of sets. Sunday and off days never break it.</span></p>';
   h+='<div class="sec-t">This week</div><div class="lk-days">'+wk.days.map(x=>'<div class="lk-d '+x.st+'"><span>'+x.l+'</span><i></i></div>').join('')+'</div>';
+  const bp=bestPumpDay();
   const rows=[
     ['Sets finished',wk.sets+' of '+wk.setsTotal],
     ['Sessions hit',wk.hit+' of '+wk.planned],
     ['Weights logged',wk.wt?wk.wl+' of '+wk.wt+' lifts':'–'],
     ['New personal bests',String(wk.prs)],
+    ['Average session',wk.mins.length?Math.round(wk.avg)+' min':'–'],
+    ['Under '+state.target+' min',wk.mins.length?wk.under+' of '+wk.mins.length:'–'],
+    ['Pump this week',wk.pumpN?fnum(wk.pump)+' / 5':'–'],
+    ['Best pump day',bp?bp.k+' ('+fnum(bp.a)+')':'–'],
     ['Vs last week',diff===null?'–':(diff>0?'+':'')+diff+' pts']
   ];
   h+='<div class="lk-rows">'+rows.map(r=>'<div><span>'+r[0]+'</span><b>'+esc(r[1])+'</b></div>').join('')+'</div>';
@@ -351,7 +435,7 @@ function lockHtml(){
   else if(wk.missed.length)verdict='Skipped: '+wk.missed.join(', ')+'. It will be remembered.';
   else if(wk.sets>0)verdict='Clean week so far. Do not get weird about it. (Get weird about it.)';
   if(verdict)h+='<p class="lk-q pad">'+esc(verdict)+'</p>';
-  const past=[];for(let i=5;i>=1;i--){const w=weekStat(addDays(monday,-7*i));past.push({s:w.score,has:w.sets>0,d:fmtd(w.from)})}
+  const past=[];for(let i=5;i>=1;i--){const w=weekStat(addDays(monday,-7*i),m);past.push({s:w.score,has:w.sets>0,d:fmtd(w.from)})}
   if(past.some(x=>x.has)){
     h+='<div class="sec-t">Last 5 weeks</div><div class="lk-hist">'+past.map(x=>'<div><div class="col"><i style="height:'+(x.has?Math.max(4,x.s):0)+'%"></i></div><b>'+(x.has?x.s:'–')+'</b><span>'+esc(x.d)+'</span></div>').join('')+'</div>';
   }
@@ -359,13 +443,29 @@ function lockHtml(){
   return h;
 }
 function shareLock(){
-  const wk=weekStat(monday),sk=streakInfo(),tr=tierFor(wk.score);
-  const text='REDLINE · '+wk.score+'/100 · '+tr[1].toUpperCase()+'\n🔥 '+sk.cur+' in a row · '+wk.sets+'/'+wk.setsTotal+' sets · '+wk.prs+' PR'+(wk.prs===1?'':'s')+'\n"'+tr[2]+'"';
+  const m=allSeries(),wk=weekStat(monday,m),sk=streakInfo(),tr=tierFor(wk.score),bs=bossFor(wk,monday);
+  const text='REDLINE · '+wk.score+'/100 · '+tr[1].toUpperCase()+'\n🔥 '+sk.cur+' in a row · '+wk.sets+'/'+wk.setsTotal+' sets · '+wk.prs+' PR'+(wk.prs===1?'':'s')+'\nBoss: '+bs.name+(bs.slain?' (slain)':' ('+bs.hp+' HP left)')+'\n"'+tr[2]+'"';
   try{
     if(navigator.share){navigator.share({text:text}).catch(()=>{});return}
     if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(text).then(()=>flash('Copied. Paste it in a group chat.'),()=>flash('Could not copy.'));return}
   }catch(e){}
   flash('Sharing is blocked in this browser.');
+}
+function loadNewPlan(){
+  Object.keys(state.log).forEach(k=>{
+    const l=state.log[k];
+    if(k<todayKey&&l&&!l.f&&l.d&&Object.keys(l.d).some(id=>/1/.test(l.d[id]))){
+      const x=dayStat(k);
+      if(!x.off)l.f={t:x.t,d:x.d,wt:x.wt,wl:x.wl};
+    }
+  });
+  state.plan=defaultPlan();state.planVer=2;
+  change();
+}
+function planBannerHtml(){
+  if(state.planVer>=2||state.planSkip)return '';
+  return '<div class="banner"><b>New plan ready</b><p>About 20-23 sets a day, every isolation set to failure. Your triceps are dips and cable pushdowns only, and legs have no leg press or lunges. Your weights, streak and notes stay. Your current exercise list is replaced, so copy a backup first if you edited it.</p>'+
+    '<button class="wide-btn" data-act="plan2">'+(armed==='plan2'?'Tap again to load':'Load new plan')+'</button><button class="mini" data-act="plan2x">Not now</button></div>';
 }
 
 /* ---------- rendering ---------- */
@@ -385,9 +485,11 @@ function renderHead(){
     h+='<div class="tabs">'+tabs+'</div>'+
       '<div class="p-top"><div class="p-title">'+esc(plan.title)+'</div><div class="p-pct" id="pp">'+s.pct+'%</div></div>'+
       '<div class="bar"><i id="pb" style="width:'+s.pct+'%"></i></div>'+
-      '<div class="p-sub"><span id="pc">'+s.d+' of '+s.t+' sets'+(s.pct===100?' · day complete':'')+'</span><span>'+wkTxt+' · '+LONG[s.dow].slice(0,3)+' '+fmtd(s.key)+'</span></div>';
+      '<div class="p-sub"><span id="pc">'+s.d+' of '+s.t+' sets'+(s.pct===100?' · day complete':'')+'</span><span>'+wkTxt+' · '+LONG[s.dow].slice(0,3)+' '+fmtd(s.key)+'</span></div>'+
+      '<div id="clk" class="clock"></div>';
   }
   $('#hd').innerHTML=h;
+  renderClock();
 }
 function swapPanel(e,key){
   const nm=effName(key,e),swapped=nm!==e.name;
@@ -464,11 +566,15 @@ function editHtml(plan){
     [6,7,8].map(n=>'<button class="chip'+(state.blockLen===n?' red':'')+'" data-act="blen" data-n="'+n+'" aria-pressed="'+(state.blockLen===n)+'">'+n+' weeks</button>').join('')+
     '</div><div class="ed-note">This block started '+fmtd(state.block.start)+'. It is week '+blockWeek(todayKey)+'.</div>'+
     '<button class="wide-btn dim" data-act="startblock">'+(armed==='block'?'Tap again to restart the block':'Start a new block today')+'</button></div>';
+  const tgt='<div class="ex"><div class="lab">Session target</div><div class="chips">'+
+    [60,75,90].map(n=>'<button class="chip'+(state.target===n?' red':'')+'" data-act="tgt" data-n="'+n+'" aria-pressed="'+(state.target===n)+'">'+n+' min</button>').join('')+
+    '</div><div class="ed-note">The session clock turns red past this. It starts at your first set and stops at 100% or after 45 minutes with nothing logged.</div></div>';
+  const np=state.planVer<2?'<button class="wide-btn dim" data-act="plan2">'+(armed==='plan2'?'Tap again to replace my plan':'Load the new v1.2 plan')+'</button>':'';
   const bk='<div class="ex"><div class="lab">Backup</div><div class="ed-note">Your workouts live only on this phone. Copy a backup now and then and paste it into Notes. To move to a new phone, paste it back here.</div>'+
     '<div class="ed-row"><button class="mini" style="flex:1" data-act="bkcopy">Copy backup</button>'+(navigator.share?'<button class="mini" style="flex:1" data-act="bkshare">Share backup</button>':'')+'</div>'+
     '<textarea class="bk-in" id="bk-in" placeholder="Paste a backup here to restore it" aria-label="Paste a backup to restore">'+esc(bkText)+'</textarea>'+
     '<button class="wide-btn dim" data-act="bkrestore">'+(armed==='restore'?'Tap again to replace everything on this phone':'Restore from pasted backup')+'</button></div>';
-  return '<div class="ed-note">Editing this day. Changes save as you type. Weights are saved by exercise name, so renaming an exercise starts its history over.</div>'+blk+
+  return '<div class="ed-note">Editing this day. Changes save as you type. Weights are saved by exercise name, so renaming an exercise starts its history over.</div>'+blk+tgt+np+
     '<div class="ex"><div class="ed-f"><label for="ttl">Day name</label><input id="ttl" class="ed" data-f="title" value="'+esc(plan.title)+'"></div></div>'+
     items+
     '<button class="wide-btn" data-act="add">+ Add exercise</button>'+
@@ -478,7 +584,7 @@ function renderList(){
   if(view==='prog'){$('#list').innerHTML=progressHtml();return}
   if(view==='lock'){$('#list').innerHTML=lockHtml();return}
   const s=stats(sel),plan=state.plan[s.dow];
-  $('#list').innerHTML=editMode?editHtml(plan):hintHtml()+bannerHtml()+plan.ex.map(e=>cardHtml(e,s.key)).join('');
+  $('#list').innerHTML=editMode?editHtml(plan):hintHtml()+planBannerHtml()+bannerHtml()+plan.ex.map(e=>cardHtml(e,s.key)).join('')+pumpHtml(s.key);
 }
 function renderFoot(){
   $('#ft').innerHTML=(editMode||view!=='work'?'':'<button class="wide-btn dim" data-act="clear">'+(armed==='clear'?'Tap again to clear':'Clear this day’s sets')+'</button>')+'<div class="status" id="status">'+statusText()+'</div>';
@@ -583,6 +689,16 @@ document.addEventListener('click',ev=>{
   switch(a){
     case 'view':view=b.dataset.v;editMode=false;armed=null;renderAll();window.scrollTo(0,0);break;
     case 'lkshare':shareLock();break;
+    case 'plan2':
+      if(armed==='plan2'){armed=null;loadNewPlan();renderAll();window.scrollTo(0,0);flash('New plan loaded.')}else arm('plan2');
+      break;
+    case 'plan2x':state.planSkip=true;change();renderList();break;
+    case 'pump':{
+      key=curKey();l=dayLog(key,true);const v=+b.dataset.v;
+      if(l.pump===v)delete l.pump;else l.pump=v;
+      change();renderList();break;
+    }
+    case 'tgt':state.target=+b.dataset.n;change();renderAll();break;
     case 'psel':progSel=b.dataset.k;renderList();window.scrollTo(0,0);break;
     case 'tab':sel=i;armed=null;renderAll();window.scrollTo(0,0);break;
     case 'edit':editMode=!editMode;armed=null;renderAll();break;
@@ -592,6 +708,7 @@ document.addEventListener('click',ev=>{
       key=curKey();
       const arr=getDone(key,e),v=!arr[i];arr[i]=v;putDone(key,e,arr);
       if(!arr.every(Boolean)){l=state.log[key];if(l&&l.t)delete l.t[nk(effName(key,e))]}
+      {const lf=state.log[key];if(lf&&lf.f)delete lf.f;const st0=stats(sel);touchSession(key,st0.d>0,st0.pct)}
       ensureAudio();wake();change();
       rerenderCard(id);renderHead();
       if(v&&state.auto&&e.rest>0&&key===todayKey&&stats(sel).pct<100)startTimer(e.rest,effName(key,e));
@@ -663,7 +780,7 @@ document.addEventListener('click',ev=>{
       else arm('reset');
       break;
     case 'clear':
-      if(armed==='clear'){armed=null;l=state.log[curKey()];if(l){l.d={};l.t={};delete l.dl}change();renderAll()}
+      if(armed==='clear'){armed=null;l=state.log[curKey()];if(l){l.d={};l.t={};delete l.dl;delete l.st;delete l.la;delete l.en;delete l.pump;delete l.f}change();renderAll()}
       else arm('clear');
       break;
   }
@@ -701,8 +818,9 @@ document.addEventListener('change',ev=>{
   }
   change();
 });
+setInterval(renderClock,1000);
 document.addEventListener('visibilitychange',()=>{
-  if(document.visibilityState==='visible'){tick();if(T.state==='run')wake()}
+  if(document.visibilityState==='visible'){tick();renderClock();if(T.state==='run')wake()}
 });
 
 renderAll();
