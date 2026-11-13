@@ -1,6 +1,6 @@
 /* Redline service worker: keeps the app working with no signal.
    Bump CACHE whenever any file changes so phones pick up the new version. */
-const CACHE = 'redline-v6';
+const CACHE = 'redline-v7';
 const ASSETS = [
   './',
   './index.html',

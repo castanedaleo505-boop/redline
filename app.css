@@ -318,3 +318,64 @@ textarea.note-in,textarea.bk-in{width:100%;min-height:84px;background:#0b0b0b;bo
 .ti.no{border-style:dashed;background:none}
 .ti.no b{color:#5a5a5a}
 @media (prefers-reduced-motion:reduce){.ch-fig{animation:none}}
+
+/* v1.5: sub-views, sheet, strength, goal, calendar, trophies, court, share, backup, plates, locker */
+.subnav{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;margin:0 -2px;padding:0 2px}
+.subnav::-webkit-scrollbar{display:none}
+.subnav .chip{flex:1 0 auto;min-height:38px;padding:0 12px;white-space:nowrap;font:600 13px var(--body);letter-spacing:.04em;color:var(--mute)}
+.subnav .chip.red{background:var(--red-dim);color:var(--fg)}
+#sheet{position:fixed;inset:0;z-index:50;background:#000;display:none;flex-direction:column;overflow-y:auto;-webkit-overflow-scrolling:touch}
+#sheet.on{display:flex}
+.sh-top{position:sticky;top:0;z-index:2;background:#000;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:calc(10px + env(safe-area-inset-top,0px)) 16px 10px;border-bottom:1px solid var(--edge)}
+.sh-body{display:flex;flex-direction:column;gap:12px;width:100%;max-width:620px;margin:0 auto;padding:14px 16px calc(28px + env(safe-area-inset-bottom,0px))}
+.mb.big{height:10px}
+.av-xt.flat{margin:0;gap:10px}
+.av-xt.flat span:last-child{text-align:right}
+button:disabled{opacity:.4;cursor:default}
+.lk-rows b em.dl{font-style:normal;font-weight:500;color:var(--mute);margin-left:6px}
+.chart-card.done{border-color:var(--red)}
+.chart-card .lk-how{margin:0}
+.heat{display:flex;flex-direction:column;gap:4px}
+.heat-m{display:grid;gap:2px;font:600 10px var(--body);letter-spacing:.06em;text-transform:uppercase;color:var(--mute);height:12px}
+.heat-m span{white-space:nowrap;overflow:visible;width:0}
+.heat-g{display:grid;grid-template-rows:repeat(7,auto);grid-auto-flow:column;gap:2px}
+.hc{display:block;aspect-ratio:1;width:100%;min-width:0;border-radius:2px;background:#1c1c1c;border:0;padding:0}
+.hc.l0{background:#1c1c1c}
+.hc.l1{background:#4a0d10}
+.hc.l2{background:#8a1218}
+.hc.l3{background:var(--red)}
+.hc.l4{background:var(--red-hi)}
+.hc.off,.hc.pre{background:none;box-shadow:inset 0 0 0 1px #1f1f1f}
+.hc.fut{background:none}
+.hc.now{box-shadow:inset 0 0 0 1px var(--fg)}
+.hc.sel{box-shadow:0 0 0 2px #fff;position:relative;z-index:1}
+.heat-key{display:flex;align-items:center;gap:4px;font:500 11px var(--body);color:var(--mute)}
+.heat-key .hc{width:11px;flex:none}
+.heat-key .sp{flex:1}
+.mo-card.rep .lk-top{align-items:flex-start}
+.mo-card.rep .lk-q{margin-top:4px}
+.grade{font:800 84px/.9 var(--display);color:var(--red-hi);flex:none}
+.exc-sel{width:100%}
+.lk-score small{font:700 24px var(--display);color:var(--mute);margin-left:2px}
+.tro-g{display:grid;grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:8px}
+.tro{display:flex;flex-direction:column;gap:4px;min-width:0;padding:12px;border:1px dashed #3a3a3a;border-radius:12px}
+.tro-i{font-size:28px;line-height:1;filter:grayscale(1);opacity:.35}
+.tro b{font:700 17px/1.1 var(--display);letter-spacing:.05em;text-transform:uppercase;color:#6a6a6a;overflow-wrap:anywhere}
+.tro span{font:500 12px/1.35 var(--body);color:var(--mute)}
+.tro u{text-decoration:none;font:600 11px var(--body);color:var(--mute);font-variant-numeric:tabular-nums}
+.tro .mb{margin-top:auto}
+.tro.ok{border:1px solid var(--edge);background:var(--card)}
+.tro.ok .tro-i{filter:none;opacity:1}
+.tro.ok b{color:var(--fg)}
+.tro.new{border-color:var(--red)}
+.tro em{align-self:flex-start;margin-top:auto;font:700 10px var(--body);font-style:normal;letter-spacing:.12em;text-transform:uppercase;color:#fff;background:var(--red);border-radius:4px;padding:2px 6px}
+.share-img{display:block;width:100%;max-width:420px;height:auto;margin:0 auto;border-radius:14px;border:1px solid var(--edge)}
+.mini.lnk{display:flex;align-items:center;justify-content:center;color:var(--fg);text-decoration:none}
+.pl-list{display:flex;flex-wrap:wrap;gap:8px}
+.pl-list b{min-width:52px;text-align:center;padding:8px 10px;border:1px solid var(--red);border-radius:10px;font:800 26px/1 var(--display);font-variant-numeric:tabular-nums}
+.pl-list span{color:var(--mute);font:500 14px var(--body)}
+.chip.sw{display:inline-flex;align-items:center;gap:8px}
+.chip.sw i{width:16px;height:16px;border-radius:50%;border:1px solid #5a5a5a;flex:none}
+.chip.sw.red{background:var(--red-dim);color:var(--fg)}
+.chip.lock{border-style:dashed}
+@media (max-width:359px){.subnav .chip{padding:0 9px;font-size:12px;letter-spacing:0}}
