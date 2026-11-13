@@ -6,7 +6,7 @@
    `git clone --depth 1 --filter=blob:none --sparse https://github.com/makehumancommunity/makehuman`
    then `git sparse-checkout set makehuman/data/targets makehuman/data/3dobjs makehuman/data/rigs`
 2. `pip install numpy scipy`
-3. `python3 tools/build_body.py <path>/makehuman/data assets/body.glb` (about 90 seconds)
+3. `python3 tools/build_body.py <path>/makehuman/data assets/body.glb` (about 2 minutes)
 
 The script fails if the mesh is not watertight or not exactly mirrored left to right.
 

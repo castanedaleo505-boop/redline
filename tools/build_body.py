@@ -38,7 +38,7 @@ U=lambda m,w:tgt('macrodetails/universal-male-young-%smuscle-%sweight'%(m,w))
 Uavg=U('average','average')
 race=(tgt('macrodetails/african-male-young')+tgt('macrodetails/asian-male-young')+tgt('macrodetails/caucasian-male-young'))/3
 ideal=tgt('macrodetails/proportions/male-young-averagemuscle-averageweight-idealproportions')
-base=V+Uavg+race+0.6*ideal
+base=V+Uavg+race+0.6*ideal+0.55*both('armslegs/%s-hand-scale-decr')
 
 # ---------- shape controls ----------
 M={}
@@ -69,6 +69,38 @@ base_full=base.copy()
 base=sym(base);M={k:sym(v) for k,v in M.items()}
 base[mir==np.arange(NB),0]=0
 
+# ---------- arms: relax the elbow bend ----------
+# The source rest pose has the forearm swung about 45 degrees forward. Rotate everything below the elbow
+# so the forearm nearly continues the upper arm (a small natural bend is kept). Each vertex turns by its
+# own skin weight times the angle, which bends the elbow smoothly instead of shearing it.
+Wraw=json.load(open(os.path.join(D,'rigs','default_weights.mhw')))['weights']
+def rodrigues(v,axis,ang):
+    c=np.cos(ang)[:,None];s_=np.sin(ang)[:,None]
+    return v*c+np.cross(axis,v)*s_+axis*(v@axis)[:,None]*(1-c)
+def jraw(n):
+    ids=sorted(set(i for f in groups['joint-'+n] for i in f));return base_full[ids].mean(0)
+def straighten(base,M):
+    chain=[k for k in Wraw if k.endswith('.L') and (k.startswith(('lowerarm','wrist','metacarpal','finger')))]
+    w=np.zeros(NB)
+    for k in chain:
+        for i,x in Wraw[k]:
+            if i<NB:w[i]+=x
+    w=np.clip(w,0,1)
+    sh,el,hd=jraw('l-shoulder'),jraw('l-elbow'),jraw('l-hand')
+    f=(hd-el)/np.linalg.norm(hd-el);ua=(el-sh)/np.linalg.norm(el-sh)
+    t=ua+np.array([0,0,0.20]);t/=np.linalg.norm(t)
+    axis=np.cross(f,t);ang=np.arcsin(np.linalg.norm(axis));axis/=np.linalg.norm(axis)
+    idx=np.where(w>0)[0];a=w[idx]*ang
+    base=base.copy();base[idx]=el+rodrigues(base[idx]-el,axis,a);base[mir[idx]]=base[idx]*FL   # right arm is the mirror image
+    M2={}
+    for k,d in M.items():
+        d=d.copy();d[idx]=rodrigues(d[idx],axis,a);d[mir[idx]]=d[idx]*FL;M2[k]=d
+    newhand=el+rodrigues((hd-el)[None],axis,np.array([ang]))[0]
+    print('forearm rotated %.1f degrees'%np.degrees(ang))
+    return base,M2,newhand
+base,M,HAND_L=straighten(base,M)
+base=sym(np.vstack([base,np.zeros((NV-NB,3))]));M={k:sym(np.vstack([v,np.zeros((NV-NB,3))])) for k,v in M.items()}
+
 # ---------- joints (helper cubes follow the same targets) ----------
 def joint(n):
     ids=sorted(set(i for f in groups['joint-'+n] for i in f));return base_full[ids].mean(0)
@@ -79,6 +111,7 @@ J={n:joint(n) for n in ['l-shoulder','l-elbow','l-hand','l-upper-leg','l-knee','
 S=0.1;y0=base[:,1].min()
 def tr(p):p=np.array(p,dtype=float)*S;p[...,1]-=y0*S;return p
 P=tr(base);M={k:v*S for k,v in M.items()}
+J['l-hand']=HAND_L
 J={k:tr(v) for k,v in J.items()};EYE=tr(EYE)
 
 # ---------- faceless mannequin head ----------
@@ -111,44 +144,67 @@ def openness(P,idx,ftris,c):
             free[s0:s0+150]+=~hit.any(1)
     return free/len(cd)
 def facefix(P,M,quads):
-    c=np.array([0,J['head'][1]+0.085,0.012]);r=np.linalg.norm(P-c,axis=1);u=(P-c)/r[:,None]
-    chin=J['head'][1]-0.105;headm=P[:,1]>chin-0.03
-    # region to make featureless: the front of the head, fading out before the ears and under the jaw
-    wf=headm*ss(u[:,2],0.0,0.30)*(1-ss(np.abs(u[:,0]),0.72,0.86))*ss(P[:,1],chin-0.012,chin+0.02)
-    fi=np.where(wf>0.02)[0]
-    hq=quads[headm[quads].all(1)];ft=np.concatenate([hq[:,[0,1,2]],hq[:,[0,2,3]]])
-    # test the face region plus everything deep inside the head (the back of the mouth cavity)
-    ti=np.where((wf>0.02)|(headm&(P[:,1]>chin)&(np.abs(P[:,0])<0.05)&(P[:,2]>-0.02)))[0]
-    op=openness(P,ti,ft,c)
-    cav=np.zeros(NB,bool);cav[ti]=op<0.5;cav|=cav[mir]
-    # grow by one ring so eyelid and lip rims are relaxed too
-    grow=cav.copy()
-    for i in np.where(cav)[0]:grow[nbrs0[i]]=True
-    grow&=(wf>0.02)|cav;ci=np.where(grow)[0]
-    P2=P.copy()
-    # exact harmonic fill: every cavity vertex becomes the average of its neighbours (sparse solve)
+    """Blank mannequin head: every vertex above the jaw line is moved onto one smooth egg. Ears, nose, eye
+    sockets and the mouth cavity are first flattened into the skin around them (exact harmonic fill), so
+    nothing folds over itself and the mesh keeps its topology."""
     import scipy.sparse as sp,scipy.sparse.linalg as spl
+    chin=J['head'][1]-0.105;top=P[:,1].max()
+    c=np.array([0,(chin+top)/2+0.006,0.034])
+    ax,by,cz=0.0755,(top-chin)/2-0.006,0.0990
+    def egg(u):
+        t=np.clip(-u[:,1],0,1);k=1-0.36*t**2         # jaw: narrower toward the chin
+        up=np.clip(u[:,1],0,1);fr=np.clip(u[:,2],0,1)
+        bk=np.clip(-u[:,2],0,1)
+        zz=cz*(1-0.13*t**2)*(1+0.12*fr*t**2)*(1-0.24*bk*t**2)  # chin slightly forward, less bulge above the nape
+        yy=by*(1.0-0.05*np.tanh(3*u[:,1]))               # flatter crown, longer jaw (smooth, no crease)
+        return 1/np.sqrt((u[:,0]/(ax*k))**2+(u[:,1]/yy)**2+(u[:,2]/zz)**2)
+    # the head is everything above a plane that runs from under the chin up to the nape
+    plane=chin+(0.085-P[:,2])*0.40
+    w=ss(P[:,1]-plane,0.0,0.04)
+    hi=np.where(w>0)[0]
+    r=np.linalg.norm(P-c,axis=1);u=(P-c)/r[:,None];R=egg(u)
+    headm=P[:,1]>plane-0.03
+    hq=quads[headm[quads].all(1)];ft=np.concatenate([hq[:,[0,1,2]],hq[:,[0,2,3]]])
+    ti=hi[(w[hi]>0.3)]
+    op=openness(P,ti,ft,c)
+    feat=np.zeros(NB,bool);feat[ti]=op<0.5
+    feat|=(w>0.3)&((r-R)>0.004)&(np.abs(u[:,0])>0.78)                 # ears
+    feat|=(w>0.3)&((r-R)>0.006)&(np.abs(u[:,0])<0.35)&(u[:,2]>0.45)   # nose, lips, brow
+    feat|=feat[mir]
+    for _ in range(2):
+        g2=feat.copy()
+        for i in np.where(feat)[0]:g2[nbrs0[i]]=True
+        feat=g2&(w>0.05)
+    ci=np.where(feat)[0]
     loc=-np.ones(NB,int);loc[ci]=np.arange(len(ci));rows=[];cols=[];vals=[];rhs=np.zeros((len(ci),3))
     for k,i in enumerate(ci):
         nb=nbrs0[i];rows.append(k);cols.append(k);vals.append(1.0)
         for j in nb:
             if loc[j]>=0:rows.append(k);cols.append(loc[j]);vals.append(-1.0/len(nb))
             else:rhs[k]+=P[j]/len(nb)
-    A=sp.csr_matrix((vals,(rows,cols)),shape=(len(ci),len(ci)))
-    P2[ci]=np.stack([spl.spsolve(A,rhs[:,a]) for a in range(3)],1)
-    print('cavity fill: max inward depth after fill %.4f m'%float((np.linalg.norm(P[ci]-c,axis=1)-np.linalg.norm(P2[ci]-c,axis=1)).max()),
-          'min radius before %.3f after %.3f'%(np.linalg.norm(P[ci]-c,axis=1).min(),np.linalg.norm(P2[ci]-c,axis=1).min()))
-    for _ in range(30):
-        Q=P2.copy();Q[fi]=np.array([P2[nbrs0[i]].mean(0) for i in fi]);P2=P2+(Q-P2)*(0.5*wf[:,None])
+    Am=sp.csr_matrix((vals,(rows,cols)),shape=(len(ci),len(ci)))
+    P2=P.copy();P2[ci]=np.stack([spl.spsolve(Am,rhs[:,a]) for a in range(3)],1)
+    def project(Q):
+        rr=np.linalg.norm(Q[hi]-c,axis=1);uu=(Q[hi]-c)/rr[:,None]
+        Q=Q.copy();Q[hi]=c+uu*(rr+(egg(uu)-rr)*w[hi])[:,None];return Q
+    P2=project(P2)
+    for _ in range(3):                     # even out the vertex spacing, then put it back on the egg
+        for _ in range(12):
+            Q=P2.copy();Q[hi]=np.array([P2[nbrs0[i]].mean(0) for i in hi]);P2=P2+(Q-P2)*(0.5*np.minimum(1,w*1.5)[:,None])
+        P2=project(P2)
+    # soften the join under the jaw and at the nape
+    jb=np.where((P[:,1]>plane-0.05)&(w<0.97))[0]
+    for _ in range(60):
+        Q=P2.copy();Q[jb]=np.array([P2[nbrs0[i]].mean(0) for i in jb]);P2[jb]=P2[jb]+(Q[jb]-P2[jb])*0.5
     P2=(P2+P2[mir]*FL)/2
     M2={}
     for k,d in M.items():
         d=d.copy()
-        for _ in range(40):
-            q2=d.copy();q2[fi]=np.array([d[nbrs0[i]].mean(0) for i in fi]);d=d+(q2-d)*wf[:,None]
+        for _ in range(60):
+            q2=d.copy();q2[hi]=np.array([d[nbrs0[i]].mean(0) for i in hi]);d=d+(q2-d)*w[:,None]
         M2[k]=(d+d[mir]*FL)/2
-    print('face: %d verts smoothed, %d cavity verts filled'%(len(fi),len(ci)))
-    return P2,M2,wf
+    print('head: %d verts on the egg, %d feature/cavity verts flattened'%(len(hi),len(ci)))
+    return P2,M2,w
 ss=lambda x,a,b:np.clip((x-a)/(b-a),0,1)**2*(3-2*np.clip((x-a)/(b-a),0,1))
 P,M,FACE=facefix(P,M,quads)
 P[mir==np.arange(NB),0]=0
@@ -167,6 +223,23 @@ N=normals(P)
 # outward check: signed volume must be positive
 vol=np.einsum('ij,ij->i',P[tris[:,0]],np.cross(P[tris[:,1]],P[tris[:,2]])).sum()/6
 assert vol>0,vol
+
+# ---------- definition: losing fat sharpens muscle separation ----------
+def lap(A,it):
+    for _ in range(it):A=np.array([A[nb].mean(0) for nb in nbrs0])
+    return A
+_shred=P+0.9*M['muscle+']+M['fat-']
+_detail=_shred-lap(_shred,6)
+_keep=(1-ss(P[:,1],J['neck'][1]-0.02,J['neck'][1]+0.03))*ss(P[:,1],J['l-ankle'][1]+0.02,J['l-ankle'][1]+0.08)
+_hw=np.zeros(NB)
+for k in Wraw:
+    if k.startswith(('wrist','metacarpal','finger')):
+        for i,x in Wraw[k]:
+            if i<NB:_hw[i]+=x
+_keep*=1-np.clip(_hw,0,1)
+dd=_detail*_keep[:,None]*1.1;dd=(dd+dd[mir]*FL)/2
+M['fat-']=M['fat-']+dd
+N=normals(P)
 
 # ---------- masks ----------
 W=json.load(open(os.path.join(D,'rigs','default_weights.mhw')))['weights']
@@ -258,10 +331,10 @@ for n in names:
     else:a['bufferView']=view(d.tobytes(),34962)
     acc.append(a);targets.append({'POSITION':len(acc)-1})
 # head outline at eye height, for the visor the app builds around it
-hz=0.02;angs=np.radians(np.arange(-120,121,8));band_=np.abs(P[:,1]-EYE[1])<0.022
+hz=0.02;angs=np.radians(np.arange(-152,153,8));band_=np.abs(P[:,1]-EYE[1])<0.022
 hr=np.hypot(P[band_,0],P[band_,2]-hz);ha=np.arctan2(P[band_,0],P[band_,2]-hz)
 prof=[float(hr[np.abs(ha-a)<np.radians(7)].max()) for a in angs]
-extras={'eye':np.round(EYE,4).tolist(),'visor':{'z0':hz,'deg0':-120,'step':8,'r':np.round(prof,4).tolist()},'targetNames':names,'maskOrder':ORDER,'joints':{k:np.round(v,4).tolist() for k,v in J.items()},
+extras={'eye':np.round(EYE,4).tolist(),'visor':{'z0':hz,'deg0':-152,'step':8,'r':np.round(prof,4).tolist()},'targetNames':names,'maskOrder':ORDER,'joints':{k:np.round(v,4).tolist() for k,v in J.items()},
         'source':'MakeHuman base mesh and targets, CC0 1.0 (makehumancommunity.org)'}
 gl={'asset':{'version':'2.0','generator':'redline tools/build_body.py','copyright':'Body mesh derived from MakeHuman assets, CC0 1.0'},
     'scene':0,'scenes':[{'nodes':[0]}],'nodes':[{'mesh':0,'name':'body'}],
