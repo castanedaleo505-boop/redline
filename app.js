@@ -1,7 +1,7 @@
 /* Redline. One file, no libraries. All data stays in this phone's localStorage. */
 (function(){
 'use strict';
-const APP_VERSION='1.3.1';
+const APP_VERSION='1.4.0';
 const LS='redline.v1';
 const HINT_KEY='redline.hint';
 const TAB_DOW=[1,2,3,4,5,6,0];
@@ -85,7 +85,7 @@ function alternates(name){
 /* ---------- state + storage ---------- */
 const now=new Date();
 const todayKey=dkey(now);
-function freshState(){return {v:2,rev:0,plan:defaultPlan(),planVer:2,target:75,body:{},name:'Leo',log:{},auto:true,notes:{},names:{},blockLen:6,block:null}}
+function freshState(){return {v:2,rev:0,plan:defaultPlan(),planVer:2,target:75,body:{},name:'Leo',log:{},auto:true,notes:{},names:{},blockLen:6,block:null,checks:{},title:'',ckSnooze:'',seenLv:0,oldSets:0}}
 function migrate(s){
   if(!s||typeof s!=='object')s=freshState();
   const f=freshState();
@@ -100,6 +100,11 @@ function migrate(s){
   if(!s.notes||typeof s.notes!=='object')s.notes={};
   if(!s.names||typeof s.names!=='object')s.names={};
   if([6,7,8].indexOf(s.blockLen)<0)s.blockLen=6;
+  if(!s.checks||typeof s.checks!=='object'||Array.isArray(s.checks))s.checks={};
+  if(typeof s.title!=='string')s.title='';
+  if(typeof s.ckSnooze!=='string')s.ckSnooze='';
+  if(typeof s.seenLv!=='number')s.seenLv=0;
+  if(!(s.oldSets>0))s.oldSets=0;
   if(!s.block||typeof s.block.start!=='string'){
     const ks=Object.keys(s.log).sort();
     s.block={start:ks.length?ks[0]:todayKey};
@@ -178,7 +183,8 @@ function flash(msg){
   el.textContent=msg;clearTimeout(flashT);
   flashT=setTimeout(()=>{const e2=$('#status');if(e2)e2.textContent=statusText()},4500);
 }
-function prune(){const c=new Date(now.getFullYear(),now.getMonth(),now.getDate()-KEEP_DAYS);const cut=dkey(c);Object.keys(state.log).forEach(k=>{if(k<cut)delete state.log[k]})}
+/* days older than two years are dropped, but their sets stay in the lifetime count so a level never goes down */
+function prune(){const c=new Date(now.getFullYear(),now.getMonth(),now.getDate()-KEEP_DAYS);const cut=dkey(c);Object.keys(state.log).forEach(k=>{if(k<cut){state.oldSets+=logSets(state.log[k]);delete state.log[k]}})}
 function change(){
   state.rev=Date.now();prune();localSave();
   const el=$('#status');if(el&&!flashT)el.textContent=statusText();
@@ -470,7 +476,7 @@ function planBannerHtml(){
     '<button class="wide-btn" data-act="plan2">'+(armed==='plan2'?'Tap again to load':'Load new plan')+'</button><button class="mini" data-act="plan2x">Not now</button></div>';
 }
 
-/* ---------- physique: photos, body numbers, character ---------- */
+/* ---------- check-ins: photos, body numbers ---------- */
 const POSES=['front','side','back'];
 const POSE_L={front:'Front',side:'Side',back:'Back'};
 const POSE_HINT={front:'Face the camera. Arms slightly out, relaxed.',side:'Turn 90 degrees. Arms at your sides.',back:'Face away. Arms slightly out, relaxed.'};
@@ -516,7 +522,7 @@ function loadPhotos(){
   idbRun('readonly',st=>st.getAll()).then(arr=>{
     Object.keys(PH.urls).forEach(k=>{try{URL.revokeObjectURL(PH.urls[k])}catch(e){}});PH.urls={};
     PH.list=(arr||[]).sort((a,b)=>a.date<b.date?-1:(a.date>b.date?1:0));PH.loaded=true;PH.loading=false;
-    if(view==='phys')renderList();
+    if(syncChecks())renderAll();else if(view==='phys')renderList();
   }).catch(()=>{PH.failed=true;PH.loaded=true;PH.loading=false;if(view==='phys')renderList()});
 }
 const photoRec=(d,p)=>PH.list.find(r=>r.date===d&&r.pose===p)||null;
@@ -529,7 +535,7 @@ function savePhoto(date,pose,blob,w,h){
   });
 }
 function delCheckin(date){
-  return idbRun('readwrite',st=>{POSES.forEach(p=>st.delete(date+'|'+p))}).then(()=>{PH.list=PH.list.filter(r=>r.date!==date)});
+  return idbRun('readwrite',st=>{POSES.forEach(p=>st.delete(date+'|'+p))}).then(()=>{PH.list=PH.list.filter(r=>r.date!==date);recheckMonth(mkey(date))});
 }
 const checkDates=()=>{const s={};PH.list.forEach(r=>{s[r.date]=1});return Object.keys(s).sort()};
 
@@ -547,7 +553,7 @@ function bodySumHtml(){
     const a=p[0].v,b=p[p.length-1].v,d=b-a;
     return '<div class="prow static"><div><div class="nm">'+f[1]+'</div><div class="sub">'+fnum(b)+' '+f[2]+(p.length>1?' · since '+fmtd(p[0].d)+' ('+(d>0?'+':'')+fnum(d)+')':' · first entry')+'</div></div>'+(p.length>1?spark(p):'')+'</div>';
   }).join('');
-  return rows||'<div class="ed-note">Enter any numbers above. Use a tape measure, relaxed, same spot each time. Your character grows with them.</div>';
+  return rows||'<div class="ed-note">Enter any numbers above. Use a tape measure, relaxed, same spot each time. Optional. Nothing here feeds the character, that runs on sets.</div>';
 }
 
 /* muscle groups, level */
@@ -564,18 +570,23 @@ function weekMuscle(){
   }
   return out;
 }
-function totalSets(){
+function logSets(l){
+  if(!l)return 0;
+  if(l.f)return l.f.d||0;
   let n=0;
-  Object.keys(state.log).forEach(k=>{
-    const l=state.log[k];if(!l)return;
-    if(l.f){n+=l.f.d;return}
-    if(l.d)Object.keys(l.d).forEach(id=>{if(/^(d|p2_)0_/.test(id))return;const m=String(l.d[id]).match(/1/g);if(m)n+=m.length});
-  });
+  if(l.d)Object.keys(l.d).forEach(id=>{if(/^(d|p2_)0_/.test(id))return;const m=String(l.d[id]).match(/1/g);if(m)n+=m.length});
   return n;
 }
+function totalSets(){
+  let n=state.oldSets||0;
+  Object.keys(state.log).forEach(k=>{n+=logSets(state.log[k])});
+  return n;
+}
+const CHECK_XP=25;
 function levelInfo(){
-  const total=totalSets(),n=1+Math.floor(Math.sqrt(total/30)),lo=30*(n-1)*(n-1),hi=30*n*n;
-  return {n:n,total:total,title:TITLES[Math.min(n-1,TITLES.length-1)],next:hi,pct:Math.round((total-lo)*100/(hi-lo))};
+  const sets=totalSets(),cks=Object.keys(state.checks).length,total=sets+cks*CHECK_XP;
+  const n=1+Math.floor(Math.sqrt(total/30)),lo=30*(n-1)*(n-1),hi=30*n*n;
+  return {n:n,total:total,sets:sets,cks:cks,title:TITLES[Math.min(n-1,TITLES.length-1)],next:hi,pct:Math.round((total-lo)*100/(hi-lo))};
 }
 /* compare + history markup */
 function compareHtml(){
@@ -588,6 +599,7 @@ function compareHtml(){
   UI.cmpA=a;UI.cmpB=b;
   const ra=photoRec(a,pose),rb=photoRec(b,pose);
   const opt=v=>ds.map(d=>'<option value="'+d+'"'+(d===v?' selected':'')+'>'+fmtd(d)+', '+d.slice(0,4)+'</option>').join('');
+  h+='<div class="chips"><button class="chip" data-act="cmpq" data-q="first">First vs latest</button><button class="chip" data-act="cmpq" data-q="prev">Last two</button></div>';
   h+='<div class="cmp-sel-row"><label>Before<select class="cmp-sel" id="cmp-a">'+opt(a)+'</select></label><label>After<select class="cmp-sel" id="cmp-b">'+opt(b)+'</select></label></div>';
   h+='<div class="cmp" id="cmp" style="--pos:50%;aspect-ratio:'+(rb.w||3)+' / '+(rb.h||4)+'"><img class="cmp-b" alt="After photo" src="'+photoUrl(rb)+'"><img class="cmp-a" alt="Before photo" src="'+photoUrl(ra)+'"><div class="cmp-line"></div>'+
     '<span class="cmp-la">'+esc(fmtd(a))+'</span><span class="cmp-lb">'+esc(fmtd(b))+'</span>'+
@@ -595,32 +607,81 @@ function compareHtml(){
   return h;
 }
 function historyHtml(){
-  return checkDates().slice().reverse().map(d=>{
+  const all=checkDates();
+  return all.slice().reverse().map(d=>{
+    const pi=all.indexOf(d)-1,since=pi>=0?setsBetween(all[pi],d)+' sets since '+fmtd(all[pi]):'First one. The baseline.';
     const th=POSES.map(p=>{const r=photoRec(d,p);return r?'<button class="thumb" data-act="phview" data-k="'+esc(r.k)+'" aria-label="View '+p+' photo"><img alt="" src="'+photoUrl(r)+'"><span>'+POSE_L[p]+'</span></button>':'<div class="thumb none"><span>'+POSE_L[p]+'</span></div>'}).join('');
-    return '<div class="ex"><div class="ex-top"><div class="ex-name">'+esc(fmtd(d))+', '+d.slice(0,4)+'</div></div><div class="thumbs">'+th+'</div>'+
+    return '<div class="ex"><div class="ex-top"><div class="ex-name">'+esc(fmtd(d))+', '+d.slice(0,4)+'</div><div class="swapped">'+esc(since)+'</div></div><div class="thumbs">'+th+'</div>'+
       '<div class="ed-row"><button class="mini" style="flex:1" data-act="phshare" data-d="'+d+'">Share or save</button><button class="mini danger" style="flex:1" data-act="phdel" data-d="'+d+'">'+(armed==='phdel'+d?'Tap again to delete':'Delete')+'</button></div></div>';
   }).join('');
 }
+/* ---------- monthly check-ins ---------- */
+const mkey=k=>k.slice(0,7);
+const curMonth=mkey(todayKey);
+const monthName=mk=>{const p=mk.split('-');return new Date(+p[0],+p[1]-1,1).toLocaleDateString('en-US',{month:'long'})};
+const monthShort=mk=>{const p=mk.split('-');return new Date(+p[0],+p[1]-1,1).toLocaleDateString('en-US',{month:'short'})};
+const monthAdd=(mk,n)=>{const p=mk.split('-'),d=new Date(+p[0],+p[1]-1+n,1);return d.getFullYear()+'-'+pad(d.getMonth()+1)};
+const daysLeftInMonth=()=>new Date(now.getFullYear(),now.getMonth()+1,0).getDate()-now.getDate();
+/* state.checks maps a month to the date of its check-in. It lives in the text backup, so the record
+   of having checked in survives even though the photos themselves stay in this phone's photo store. */
+function noteCheck(date){const m=mkey(date);if(!state.checks[m]||state.checks[m]<date){state.checks[m]=date;return true}return false}
+function syncChecks(){
+  let ch=false;PH.list.forEach(r=>{if(noteCheck(r.date))ch=true});
+  if(ch)change();
+  return ch;
+}
+function recheckMonth(m){
+  const ds=checkDates().filter(d=>mkey(d)===m);
+  if(ds.length)state.checks[m]=ds[ds.length-1];else delete state.checks[m];
+  change();
+}
+const checkDue=()=>!state.checks[curMonth];
+function monthStreak(){
+  let m=curMonth,n=0;
+  if(!state.checks[m])m=monthAdd(m,-1);
+  while(state.checks[m]){n++;m=monthAdd(m,-1)}
+  return n;
+}
+function monthLine(){
+  const mn=monthName(curMonth),left=daysLeftInMonth(),has=Object.keys(state.checks).length;
+  if(state.checks[curMonth])return mn+' is on the record. The camera has been appeased until '+monthName(monthAdd(curMonth,1))+' 1.';
+  if(!has)return 'No photos yet. Future you is going to want receipts. Takes two minutes.';
+  if(!state.checks[monthAdd(curMonth,-1)])return 'You ghosted '+monthName(monthAdd(curMonth,-1))+'. The camera noticed. '+mn+' is still open.';
+  if(left<=3)return left+' '+(left===1?'day':'days')+' left in '+mn+'. The camera is tapping its foot.';
+  return mn+' check-in is due. '+left+' days before the month files a complaint.';
+}
+function setsBetween(a,b){
+  let n=0;Object.keys(state.log).forEach(k=>{if(k>a&&k<=b)n+=logSets(state.log[k])});return n;
+}
+function monthCardHtml(){
+  const done=!!state.checks[curMonth],sk=monthStreak(),tot=Object.keys(state.checks).length;
+  const ds=Object.keys(state.checks).map(m=>state.checks[m]).sort(),last=ds.length?ds[ds.length-1]:null;
+  let cells='';
+  for(let i=11;i>=0;i--){
+    const m=monthAdd(curMonth,-i),d=state.checks[m],cls='mo'+(d?' hit':'')+(m===curMonth?' cur':'');
+    const inner='<span>'+monthShort(m)+'</span><i></i>';
+    cells+=d?'<button class="'+cls+'" data-act="mopen" data-d="'+d+'" aria-label="'+monthName(m)+', checked in '+fmtd(d)+'">'+inner+'</button>'
+            :'<div class="'+cls+'" aria-label="'+monthName(m)+', no check-in">'+inner+'</div>';
+  }
+  return '<div class="mo-card'+(done?' done':' due')+'"><div class="lk-top"><div class="lk-lab">Monthly check-in · '+esc(monthName(curMonth))+'</div><div class="mo-st">'+(done?'Done':'Due')+'</div></div>'+
+    '<p class="lk-q">'+esc(monthLine())+'</p>'+
+    '<div class="mo-grid">'+cells+'</div>'+
+    '<div class="stats"><div class="stat"><b>'+sk+'</b><span>'+(sk===1?'Month':'Months')+' in a row</span></div><div class="stat"><b>'+tot+'</b><span>Total</span></div><div class="stat"><b>'+(last?dayDiff(last,todayKey):'–')+'</b><span>Days since</span></div></div>'+
+    '<button class="wide-btn'+(done?' dim':' solid')+'" data-act="camstart">'+(done?'Redo this month’s check-in':'Start '+esc(monthName(curMonth))+' check-in')+'</button>'+
+    '<p class="lk-how">Front, side and back with a self-timer. Same spot, same light, same time of day. One check-in per calendar month counts, and each month is worth +'+CHECK_XP+' XP for your character. Photos never leave this phone.</p></div>';
+}
+function checkBannerHtml(){
+  if(!checkDue()||PH.failed||(state.ckSnooze&&state.ckSnooze>todayKey))return '';
+  return '<div class="banner"><b>'+esc(monthName(curMonth))+' check-in due</b><p>'+esc(monthLine())+'</p>'+
+    '<button class="wide-btn" data-act="camstart">Do it now</button><button class="mini" data-act="cksnooze">Bug me in 3 days</button></div>';
+}
 function physHtml(){
-  const lv=levelInfo(),wm=weekMuscle();
-  let h='<div class="av-card flat">'+
-    '<div class="av-over"><div class="av-lv"><span>Level</span><b>'+lv.n+'</b></div><div class="av-id"><div class="av-name" id="av-name">'+esc(state.name)+'</div><div class="av-ti">'+esc(lv.title)+'</div></div></div>'+
-    '<div class="av-xp"><i style="width:'+lv.pct+'%"></i></div><div class="av-xt"><span>'+lv.total+' lifetime sets</span><span>'+(lv.next-lv.total)+' to level '+(lv.n+1)+'</span></div>'+
-    '<div class="ed-f av-nm"><label for="nm-in">Name on your character</label><input id="nm-in" class="name-in" maxlength="14" autocomplete="off" value="'+esc(state.name)+'"></div>'+
-    '<div class="ed-note">Your level comes from lifetime sets finished. The bars below show how much of each muscle’s planned sets you’ve done this week.</div></div>';
-  h+='<div class="sec-t">This week by muscle</div><div class="mus">'+MUS.map(g=>{
-    const x=wm[g],p=x.plan?Math.min(100,Math.round(x.done*100/x.plan)):0;
-    return '<div class="mrow"><span>'+MUS_L[g]+'</span><div class="mb"><i style="width:'+p+'%"></i></div><b>'+fnum(x.done)+' / '+fnum(x.plan)+'</b></div>';
-  }).join('')+'</div>';
-  const ds=checkDates(),last=ds.length?ds[ds.length-1]:null;
-  h+='<div class="sec-t">Photo check-in</div><div class="ex"><div class="ex-name">'+(last?'Last check-in: '+esc(fmtd(last))+' · '+dayDiff(last,todayKey)+' days ago':'No check-ins yet')+'</div>'+
-    '<div class="ed-note">Front, side and back with a self-timer. Same spot, same light and same time of day makes the comparison fair. Once a month works well.</div>'+
-    '<button class="wide-btn" data-act="camstart">Start check-in</button></div>';
+  let h=monthCardHtml();
   const tb=state.body[todayKey]||{};
   h+='<div class="sec-t">Body numbers · today</div><div class="ex"><div class="bd-grid">'+BODY_F.map(f=>{
     const lastv=bodyLatest(f[0],todayKey);
     return '<div class="ed-f"><label for="bd-'+f[0]+'">'+f[1]+' ('+f[2]+')</label><input id="bd-'+f[0]+'" class="bd-in" data-f="'+f[0]+'" inputmode="decimal" autocomplete="off" placeholder="'+(lastv?fnum(lastv.v):'')+'" value="'+esc(tb[f[0]]||'')+'"></div>';
-  }).join('')+'</div><div class="ed-note">Tape in inches, body weight in pounds. Saved under today’s date.</div></div>';
+  }).join('')+'</div><div class="ed-note">Tape in inches, body weight in pounds. Saved under today’s date. Optional, but the tape does not lie and the mirror does.</div></div>';
   h+='<div id="bd-sum">'+bodySumHtml()+'</div>';
   h+='<div class="sec-t">Compare</div>';
   if(PH.failed)h+='<div class="empty"><b>Photos blocked</b><p>This browser is blocking photo storage, so check-ins can’t be saved here.</p></div>';
@@ -629,6 +690,164 @@ function physHtml(){
   else h+='<div class="ex">'+compareHtml()+'</div><div class="sec-t">All check-ins</div>'+historyHtml()+
     '<div class="ed-note">Photos live only on this phone, not in the text backup. Use Share or save now and then so a phone problem can’t take them.</div>';
   return h;
+}
+
+/* ---------- character: drawn on this phone from your own training, no photo or scan involved ---------- */
+const GEAR=[
+  [2,'Wrist wraps','Purely cosmetic. Adds 40 lb to your confidence.'],
+  [3,'Knee sleeves','For knees that have seen things.'],
+  [5,'Lifting belt','Worn for curls. Nobody is brave enough to say anything.'],
+  [7,'Red aura','Visible to gym staff. They have stopped making eye contact.'],
+  [9,'Crown','Self-appointed. Uncontested.'],
+  [11,'Redline glow','The needle is past the red. It lives there now.']
+];
+const LV_LINE=['','You exist. Bold first move.','They know your face at the front desk now.','You have opinions about cable attachments.','You own more than one shaker bottle.','Your skull is now load-bearing.',
+  'Small children point. Dogs sit.','You growled at a dumbbell. It moved.','HR would like a word. HR cannot find you.','There is a health bar above your head.','Scholars dispute whether you were ever a beginner.','The needle is past the red and it is not coming back.'];
+function featStats(){
+  const m=allSeries();let prs=0,pump5=0,legs=0,bosses=0;
+  Object.keys(m).forEach(k=>{let best=0;m[k].forEach(p=>{if(best>0&&p.v>best)prs++;if(p.v>best)best=p.v})});
+  Object.keys(state.log).forEach(k=>{
+    const l=state.log[k];if(!l)return;
+    if(l.pump===5)pump5++;
+    const pl=state.plan[parseKey(k).getDay()];
+    if(pl&&/leg/i.test(pl.title)&&dayStat(k).pct>=HIT)legs++;
+  });
+  for(let i=0;i<=52;i++){const w=weekStat(addDays(monday,-7*i),m);if(w.setsTotal>0&&w.sets>=Math.max(1,Math.ceil(w.setsTotal*0.9)))bosses++}
+  return {sets:totalSets(),months:Object.keys(state.checks).length,bosses:bosses,streak:streakInfo().best,prs:prs,pump5:pump5,legs:legs};
+}
+const FEATS=[
+  ['Paparazzi','months',1,'Do 1 monthly check-in','Evidence now exists.'],
+  ['Time-Lapse','months',3,'Do 3 monthly check-ins','Three frames. It’s basically a documentary.'],
+  ['Calendar Model','months',12,'Do 12 monthly check-ins','A full year of receipts.'],
+  ['Boss Slayer','bosses',1,'Slay 1 weekly boss','It had a family. You had a split.'],
+  ['Serial Slayer','bosses',5,'Slay 5 weekly bosses','The bosses have a group chat about you.'],
+  ['Clockwork','streak',6,'Hit 6 sessions in a row','You could set a watch by this. Nobody will.'],
+  ['Problem','streak',24,'Hit 24 sessions in a row','Friends have stopped inviting you to things on gym days.'],
+  ['PR Goblin','prs',10,'Set 10 personal bests','Hoards plates. Hisses at deloads.'],
+  ['Sleeve Menace','pump5',5,'Log a 5/5 pump 5 times','Your shirts have filed a grievance.'],
+  ['Leg Day Survivor','legs',10,'Finish 10 leg days','Stairs are a personal enemy now.'],
+  ['Thousandaire','sets',1000,'Finish 1,000 lifetime sets','A thousand sets. None of them were the last one.']
+];
+function titleList(lv,fs){
+  const out=[];
+  TITLES.forEach((t,i)=>{out.push({t:t,ok:lv.n>=i+1,how:'Reach level '+(i+1),line:LV_LINE[i+1]||''})});
+  FEATS.forEach(f=>{out.push({t:f[0],ok:fs[f[1]]>=f[2],how:f[3]+' ('+Math.min(fs[f[1]],f[2])+' of '+f[2]+')',line:f[4]})});
+  return out;
+}
+/* the title on the card: the one you picked if it is still earned, otherwise your level title */
+function wornTitle(lv,list){
+  if(state.title&&list.some(x=>x.ok&&x.t===state.title))return state.title;
+  return lv.title;
+}
+/* lifetime sets per muscle, from every logged day that still matches an exercise in the plan */
+function lifeMuscle(){
+  const out={},byId={};MUS.forEach(g=>{out[g]=0});
+  Object.keys(state.plan).forEach(k=>{state.plan[k].ex.forEach(e=>{byId[e.id]=e})});
+  Object.keys(state.log).forEach(k=>{
+    const l=state.log[k];if(!l||l.f||!l.d)return;
+    Object.keys(l.d).forEach(id=>{
+      const e=byId[id];if(!e||e.nw)return;
+      const c=String(l.d[id]).match(/1/g);if(!c)return;
+      muscleOf((l.sw&&l.sw[id])||e.name).forEach(x=>{out[x[0]]+=c.length*x[1]});
+    });
+  });
+  return out;
+}
+const DEV_FULL=1500;
+function buildDev(lm,lv){
+  const floor=Math.min(1,(lv.n-1)/10)*0.45,d={};
+  MUS.forEach(g=>{d[g]=Math.max(floor,Math.min(1,Math.sqrt(lm[g]/DEV_FULL)))});
+  return d;
+}
+function nameSize(name,S){return Math.max(8,Math.min(24,(2*S-18)/(Math.max(3,name.length)*0.56))).toFixed(1)}
+function charSvg(o){
+  const d=o.dev,cx=120,n=x=>(+x).toFixed(1),lv=o.lv;
+  const S=40+13*d.shoulders+4*d.back,W=23+2*d.chest,H=27+4*d.glutes,lat=5+9*d.back,trapY=88-5*d.back;
+  const yW=172,yH=192,SK='#ededed',DK='#1c1c1c';
+  const arm=Math.max(d.biceps,d.triceps),ua=15+9*arm,fa=11+5*arm;
+  const th=24+10*Math.max(d.quads,d.hams),cf=14+8*d.calves;
+  const sn=Math.sin(28*Math.PI/180),cs=Math.cos(28*Math.PI/180);
+  let back='',legs='',arms='',body='',gear='';
+  if(lv>=7)back+='<circle cx="120" cy="190" r="150" fill="url(#ch-aura)"/><circle cx="120" cy="190" r="112" fill="none" stroke="#e3171f" stroke-opacity=".35" stroke-width="1.5" stroke-dasharray="3 7"/>';
+  [-1,1].forEach(sd=>{
+    const hx=cx+sd*H*0.55,hy=yH+2,kx=hx+sd*6,ky=262,ax=kx+sd*2,ay=328;
+    legs+='<line x1="'+n(hx)+'" y1="'+hy+'" x2="'+n(kx)+'" y2="'+ky+'" stroke="'+SK+'" stroke-width="'+n(th)+'" stroke-linecap="round"/>'+
+      '<line x1="'+n(kx)+'" y1="'+ky+'" x2="'+n(ax)+'" y2="'+ay+'" stroke="'+SK+'" stroke-width="'+n(cf)+'" stroke-linecap="round"/>'+
+      '<ellipse cx="'+n(ax+sd*5)+'" cy="336" rx="13" ry="6" fill="'+SK+'"/>';
+    /* shorts leg */
+    const sx=hx+(kx-hx)*0.46,sy=hy+(ky-hy)*0.46;
+    const tx=hx+(kx-hx)*0.12,ty=hy+(ky-hy)*0.12;
+    legs+='<line x1="'+n(tx)+'" y1="'+n(ty)+'" x2="'+n(sx)+'" y2="'+n(sy)+'" stroke="#3a3a3a" stroke-width="'+n(th+5)+'"/>'+
+      '<line x1="'+n(tx)+'" y1="'+n(ty)+'" x2="'+n(sx)+'" y2="'+n(sy-1.5)+'" stroke="'+DK+'" stroke-width="'+n(th+3)+'"/>'+
+      '<line x1="'+n(tx+sd*(th/2+0.5))+'" y1="'+n(ty)+'" x2="'+n(sx+sd*(th/2+0.5))+'" y2="'+n(sy-1.5)+'" stroke="#e3171f" stroke-width="2.5"/>';
+    if(lv>=3)gear+='<ellipse cx="'+n(kx)+'" cy="'+ky+'" rx="'+n((th+cf)/4+2)+'" ry="8.5" fill="'+DK+'" stroke="#e3171f" stroke-width="1.5"/>';
+    const jx=cx+sd*(S+1),jy=104,ex=jx+sd*50*sn,ey=jy+50*cs,wx=jx+sd*98*sn,wy=jy+98*cs;
+    arms+='<line x1="'+n(jx)+'" y1="'+jy+'" x2="'+n(ex)+'" y2="'+n(ey)+'" stroke="'+SK+'" stroke-width="'+n(ua)+'" stroke-linecap="round"/>'+
+      '<line x1="'+n(ex)+'" y1="'+n(ey)+'" x2="'+n(wx)+'" y2="'+n(wy)+'" stroke="'+SK+'" stroke-width="'+n(fa)+'" stroke-linecap="round"/>'+
+      '<circle cx="'+n(wx+sd*3)+'" cy="'+n(wy+7)+'" r="7.5" fill="'+SK+'"/>';
+    if(lv>=2)gear+='<line x1="'+n(jx+sd*84*sn)+'" y1="'+n(jy+84*cs)+'" x2="'+n(jx+sd*96*sn)+'" y2="'+n(jy+96*cs)+'" stroke="#e3171f" stroke-width="'+n(fa+2.5)+'"/>';
+    body+='<circle cx="'+n(cx+sd*(S-1))+'" cy="103" r="'+n(10+6*d.shoulders)+'" fill="'+SK+'"/>';
+  });
+  const torso='M'+(cx-9)+',84 L'+(cx+9)+',84 Q'+n(cx+S*0.5)+','+n(trapY)+' '+n(cx+S-2)+',96 C'+n(cx+S+lat*0.3)+',122 '+n(cx+W+lat)+',146 '+n(cx+W)+','+yW+' L'+n(cx+H)+','+yH+' L'+n(cx-H)+','+yH+' L'+n(cx-W)+','+yW+' C'+n(cx-W-lat)+',146 '+n(cx-S-lat*0.3)+',122 '+n(cx-S+2)+',96 Q'+n(cx-S*0.5)+','+n(trapY)+' '+(cx-9)+',84 Z';
+  const pelvis='<path d="M'+n(cx-H)+','+(yH-3)+' L'+n(cx+H)+','+(yH-3)+' L'+n(cx+H+3)+','+(yH+18)+' L'+n(cx-H-3)+','+(yH+18)+' Z" fill="'+DK+'" stroke="#3a3a3a" stroke-width="1"/><rect x="'+n(cx-H)+'" y="'+(yH-4)+'" width="'+n(2*H)+'" height="4" rx="2" fill="#f5f5f5"/>';
+  const top='<path d="'+torso+'" fill="#e3171f"/>'+
+    '<path d="M'+(cx-13)+',83 Q'+cx+',104 '+(cx+13)+',83 Z" fill="'+SK+'"/>'+
+    '<path d="M'+n(cx-S*0.6)+',140 Q'+cx+',149 '+n(cx+S*0.6)+',140" fill="none" stroke="#8e0c12" stroke-width="1.6" stroke-linecap="round" opacity="'+n(0.25+0.6*d.chest)+'"/>'+
+    '<line x1="'+cx+'" y1="150" x2="'+cx+'" y2="'+(yW+12)+'" stroke="#8e0c12" stroke-width="1.2" opacity="'+n(0.2+0.4*d.chest)+'"/>';
+  if(lv>=5)gear+='<rect x="'+n(cx-W-3)+'" y="'+(yW-5)+'" width="'+n(2*W+6)+'" height="13" rx="3" fill="#0b0b0b" stroke="#f5f5f5" stroke-width="1.5"/><rect x="'+(cx-6)+'" y="'+(yW-3)+'" width="12" height="9" rx="1.5" fill="none" stroke="#f5f5f5" stroke-width="1.5"/>';
+  /* faceless head; the visor is the app icon: a red bar with a white marker, filled to this week's locked-in score */
+  const sc=Math.max(0,Math.min(100,o.score)),vw=26,vx=cx-vw/2,fw=vw*sc/100;
+  const head='<rect x="'+(cx-8)+'" y="74" width="16" height="14" fill="'+SK+'"/><ellipse cx="'+cx+'" cy="58" rx="17.5" ry="21.5" fill="'+SK+'"/>'+
+    '<rect x="'+vx+'" y="53" width="'+vw+'" height="8" rx="4" fill="'+DK+'"/>'+(fw>0?'<rect x="'+vx+'" y="53" width="'+n(Math.max(8,fw))+'" height="8" rx="4" fill="#e3171f"/>':'')+
+    '<rect x="'+n(vx+Math.max(fw,1)-1)+'" y="49.5" width="2.4" height="15" rx="1.2" fill="#fff" stroke="#000" stroke-width=".6"/>';
+  if(lv>=9)gear+='<path d="M'+(cx-15)+',40 L'+(cx-16)+',25 L'+(cx-8)+',33 L'+cx+',21 L'+(cx+8)+',33 L'+(cx+16)+',25 L'+(cx+15)+',40 Z" fill="#f5f5f5" stroke="#000" stroke-width="1"/><circle cx="'+cx+'" cy="33.5" r="2.4" fill="#e3171f"/>';
+  const nm='<text id="ch-nm" x="'+cx+'" y="126" text-anchor="middle" fill="#fff" font-size="'+nameSize(o.name,S)+'" font-weight="800" letter-spacing=".5" data-s="'+n(S)+'" style="font-family:var(--display)">'+esc(o.name.toUpperCase())+'</text>';
+  return '<svg class="ch-svg'+(o.ghost?' ghost':'')+(lv>=11?' glow':'')+'" viewBox="0 0 240 352" role="img" aria-label="'+esc(o.name)+', level '+lv+' character">'+
+    '<defs><radialGradient id="ch-aura"><stop offset="0" stop-color="#e3171f" stop-opacity=".42"/><stop offset=".6" stop-color="#e3171f" stop-opacity=".12"/><stop offset="1" stop-color="#e3171f" stop-opacity="0"/></radialGradient></defs>'+
+    back+'<ellipse cx="120" cy="341" rx="62" ry="6" fill="#000" opacity=".55"/><g class="ch-fig">'+arms+legs+pelvis+top+body+head+gear+nm+'</g></svg>';
+}
+function charHtml(){
+  const lv=levelInfo(),m=allSeries(),wk=weekStat(monday,m),fs=featStats(),list=titleList(lv,fs),worn=wornTitle(lv,list);
+  const lm=lifeMuscle(),dev=buildDev(lm,lv),wm=weekMuscle(),ghost=wk.sets===0,tr=tierFor(wk.score);
+  if(lv.n>state.seenLv){if(state.seenLv>0)UI.lvUp=lv.n;state.seenLv=lv.n;change()}
+  let h='';
+  if(UI.lvUp)h+='<div class="banner hard"><b>Level '+UI.lvUp+' · '+esc(TITLES[Math.min(UI.lvUp-1,TITLES.length-1)])+'</b><p>'+esc(LV_LINE[Math.min(UI.lvUp,LV_LINE.length-1)])+'</p></div>';
+  h+='<div class="av-card">'+
+    '<div class="av-over"><div class="av-lv"><span>Level</span><b>'+lv.n+'</b></div><div class="av-id"><div class="av-name" id="av-name">'+esc(state.name)+'</div><div class="av-ti">'+esc(worn)+'</div></div></div>'+
+    charSvg({dev:dev,lv:lv.n,score:wk.score,name:state.name,ghost:ghost})+
+    '<div class="ch-mood">'+(ghost?'Currently a ghost. One set brings them back.':'Mood: '+esc(tr[1])+' · visor shows this week’s '+wk.score+'/100')+'</div>'+
+    '<div class="av-xp"><i style="width:'+lv.pct+'%"></i></div><div class="av-xt"><span>'+lv.total+' XP</span><span>'+(lv.next-lv.total)+' to level '+(lv.n+1)+'</span></div>'+
+    '<div class="ed-note">'+lv.sets+' lifetime sets'+(lv.cks?' + '+lv.cks+' monthly '+(lv.cks===1?'check-in':'check-ins')+' × '+CHECK_XP:'')+'. One finished set is 1 XP.</div>'+
+    '<div class="ed-f av-nm"><label for="nm-in">Name on your character</label><input id="nm-in" class="name-in" maxlength="14" autocomplete="off" value="'+esc(state.name)+'"></div>'+
+    '<div class="ed-note">Drawn on this phone from your own logged sets. No photo, scan or account involved, and nothing is uploaded. Muscles you train more get bigger on the character.</div></div>';
+  h+='<button class="wide-btn" data-act="chshare">Share character card</button>';
+  h+='<div class="sec-t">Gear</div><div class="lk-rows gear">'+GEAR.map(g=>{
+    const ok=lv.n>=g[0];
+    return '<div class="'+(ok?'ok':'no')+'"><span><b>'+esc(g[1])+'</b><em>'+esc(ok?g[2]:'Unlocks at level '+g[0])+'</em></span><b>'+(ok?'On':'Lv '+g[0])+'</b></div>';
+  }).join('')+'</div>';
+  const got=list.filter(x=>x.ok).length;
+  h+='<div class="sec-t">Titles · '+got+' of '+list.length+' earned</div><div class="ed-note">Tap an earned title to wear it. Your level title is the default.</div><div class="ti-list">'+list.map(x=>{
+    if(!x.ok)return '<div class="ti no"><b>'+esc(x.t)+'</b><span>'+esc(x.how)+'</span></div>';
+    const on=x.t===worn;
+    return '<button class="ti'+(on?' on':'')+'" data-act="titlepick" data-t="'+esc(x.t)+'" aria-pressed="'+on+'"><b>'+esc(x.t)+(on?' · wearing':'')+'</b><span>'+esc(x.line)+'</span></button>';
+  }).join('')+'</div>';
+  h+='<div class="sec-t">Build · lifetime sets by muscle</div><div class="mus">'+MUS.map(g=>
+    '<div class="mrow"><span>'+MUS_L[g]+'</span><div class="mb"><i style="width:'+Math.round(dev[g]*100)+'%"></i></div><b>'+fnum(lm[g])+'</b></div>'
+  ).join('')+'</div><div class="ed-note">The character’s proportions follow these bars. A muscle maxes out around '+DEV_FULL+' sets, so this takes a while. Good.</div>';
+  h+='<div class="sec-t">This week by muscle</div><div class="mus">'+MUS.map(g=>{
+    const x=wm[g],p=x.plan?Math.min(100,Math.round(x.done*100/x.plan)):0;
+    return '<div class="mrow"><span>'+MUS_L[g]+'</span><div class="mb"><i style="width:'+p+'%"></i></div><b>'+fnum(x.done)+' / '+fnum(x.plan)+'</b></div>';
+  }).join('')+'</div>';
+  return h;
+}
+function shareChar(){
+  const lv=levelInfo(),list=titleList(lv,featStats()),sk=streakInfo();
+  const text='REDLINE · '+state.name.toUpperCase()+' · LEVEL '+lv.n+' '+wornTitle(lv,list).toUpperCase()+'\n'+lv.sets+' lifetime sets · '+lv.cks+' monthly check-in'+(lv.cks===1?'':'s')+' · best streak '+sk.best+'\n"'+(LV_LINE[Math.min(lv.n,LV_LINE.length-1)])+'"';
+  try{
+    if(navigator.share){navigator.share({text:text}).catch(()=>{});return}
+    if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(text).then(()=>flash('Copied. Paste it somewhere it will cause concern.'),()=>flash('Could not copy.'));return}
+  }catch(e){}
+  flash('Sharing is blocked in this browser.');
 }
 function sharePhotos(d){
   const files=POSES.map(p=>photoRec(d,p)).filter(Boolean).map(r=>new File([r.blob],'redline-'+r.date+'-'+r.pose+'.jpg',{type:'image/jpeg'}));
@@ -756,7 +975,7 @@ function camFinish(){
   if(!poses.length){camClose();return}
   CAM.saving=true;camUpdate();
   poses.reduce((p,pose)=>p.then(()=>savePhoto(todayKey,pose,CAM.shots[pose].blob,CAM.shots[pose].w,CAM.shots[pose].h)),Promise.resolve()).then(()=>{
-    camClose();if(view==='phys')renderList();flash('Check-in saved on this phone.');
+    noteCheck(todayKey);state.ckSnooze='';change();camClose();renderAll();flash(monthName(curMonth)+' check-in saved on this phone. +'+CHECK_XP+' XP.');
   }).catch(()=>{CAM.saving=false;CAM.err='Could not save. Photo storage may be blocked in this browser.';camUpdate()});
 }
 function camSkip(){
@@ -767,7 +986,8 @@ function camSkip(){
 
 /* ---------- rendering ---------- */
 function renderHead(){
-  const seg='<div class="seg"><button class="'+(view==='work'?'on':'')+'" data-act="view" data-v="work" aria-pressed="'+(view==='work')+'">Workout</button><button class="'+(view==='prog'?'on':'')+'" data-act="view" data-v="prog" aria-pressed="'+(view==='prog')+'">Progress</button><button class="'+(view==='lock'?'on':'')+'" data-act="view" data-v="lock" aria-pressed="'+(view==='lock')+'">Locked in</button><button class="'+(view==='phys'?'on':'')+'" data-act="view" data-v="phys" aria-pressed="'+(view==='phys')+'">Physique</button></div>';
+  const sb=(v,l,x)=>'<button class="'+(view===v?'on':'')+(x||'')+'" data-act="view" data-v="'+v+'" aria-pressed="'+(view===v)+'">'+l+'</button>';
+  const seg='<div class="seg">'+sb('work','Workout')+sb('prog','Progress')+sb('lock','Locked in')+sb('phys','Check-in',checkDue()?' due':'')+sb('char','Character')+'</div>';
   let h='<div class="top-row">'+seg+(view==='work'&&editMode?'<button class="edit-btn on" data-act="edit" aria-pressed="true">Done</button>':'')+'</div>';
   if(view==='work'){
     const tabs=TAB_DOW.map((dow,i)=>{
@@ -879,10 +1099,11 @@ function editHtml(plan){
 }
 function renderList(){
   if(view==='phys'){$('#list').innerHTML=physHtml();return}
+  if(view==='char'){$('#list').innerHTML=charHtml();return}
   if(view==='prog'){$('#list').innerHTML=progressHtml();return}
   if(view==='lock'){$('#list').innerHTML=lockHtml();return}
   const s=stats(sel),plan=state.plan[s.dow];
-  $('#list').innerHTML=editMode?editHtml(plan):hintHtml()+planBannerHtml()+bannerHtml()+plan.ex.map(e=>cardHtml(e,s.key)).join('')+pumpHtml(s.key);
+  $('#list').innerHTML=editMode?editHtml(plan):hintHtml()+planBannerHtml()+checkBannerHtml()+bannerHtml()+plan.ex.map(e=>cardHtml(e,s.key)).join('')+pumpHtml(s.key);
 }
 function renderFoot(){
   $('#ft').innerHTML=(editMode||view!=='work'?'':'<button class="wide-btn dim" data-act="edit">Edit this day</button><button class="wide-btn dim" data-act="clear">'+(armed==='clear'?'Tap again to clear':'Clear this day’s sets')+'</button>')+'<div class="status" id="status">'+statusText()+'</div>';
@@ -985,8 +1206,21 @@ document.addEventListener('click',ev=>{
   const a=b.dataset.act,i=+b.dataset.i,id=b.dataset.id;
   let e,key,plan,l;
   switch(a){
-    case 'view':view=b.dataset.v;editMode=false;armed=null;renderAll();window.scrollTo(0,0);if(view==='phys'&&!PH.loaded)loadPhotos();break;
+    case 'view':view=b.dataset.v;editMode=false;armed=null;UI.lvUp=0;renderAll();window.scrollTo(0,0);break;
     case 'lkshare':shareLock();break;
+    case 'chshare':shareChar();break;
+    case 'titlepick':state.title=b.dataset.t;change();renderList();break;
+    case 'cksnooze':state.ckSnooze=dkey(addDays(now,3));change();renderList();flash('Fine. Three days. The camera will remember this.');break;
+    case 'mopen':{
+      const d=b.dataset.d,r=POSES.map(p=>photoRec(d,p)).filter(Boolean)[0];
+      if(r)viewPhoto(r.k);else flash(PH.loaded?'That month’s photos aren’t on this phone anymore.':'Photos are still loading.');
+      break;
+    }
+    case 'cmpq':{
+      const ds=PH.list.filter(r=>r.pose===(UI.cmpPose||'front')).map(r=>r.date);
+      if(ds.length>1){UI.cmpB=ds[ds.length-1];UI.cmpA=b.dataset.q==='prev'?ds[ds.length-2]:ds[0];renderList()}
+      break;
+    }
     case 'camstart':camOpen();break;
     case 'camx':camClose();break;
     case 'camflip':CAM.facing=CAM.facing==='user'?'environment':'user';CAM.stream=null;camUpdate();camStart();break;
@@ -1124,6 +1358,7 @@ document.addEventListener('input',ev=>{
   }else if(t.classList.contains('name-in')){
     state.name=t.value.slice(0,14).trim()||'Leo';change();
     const el=document.getElementById('av-name');if(el)el.textContent=state.name;
+    const tx=document.getElementById('ch-nm');if(tx){tx.textContent=state.name.toUpperCase();tx.setAttribute('font-size',nameSize(state.name,+tx.dataset.s))}
   }else if(t.id==='cmp-r'){
     const el=document.getElementById('cmp');if(el)el.style.setProperty('--pos',t.value+'%');
   }
@@ -1152,8 +1387,12 @@ document.addEventListener('change',ev=>{
 setInterval(renderClock,1000);
 document.addEventListener('visibilitychange',()=>{
   if(document.visibilityState==='hidden'&&CAM.on)camStop();
-  if(document.visibilityState==='visible'){tick();renderClock();if(T.state==='run')wake();if(CAM.on&&!CAM.review&&!CAM.stream)camStart()}
+  if(document.visibilityState==='visible'){
+    /* opened again on a later day: reload so "today" is really today */
+    if(dkey(new Date())!==todayKey&&!CAM.on){location.reload();return}
+    tick();renderClock();if(T.state==='run')wake();if(CAM.on&&!CAM.review&&!CAM.stream)camStart()}
 });
+loadPhotos();
 
 renderAll();
 renderTimer();

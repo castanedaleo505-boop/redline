@@ -217,8 +217,7 @@ textarea.note-in,textarea.bk-in{width:100%;min-height:84px;background:#0b0b0b;bo
 .seg{grid-template-columns:repeat(4,1fr)}
 .seg button{font-size:14px;letter-spacing:.04em}
 .av-card{position:relative;border:1px solid var(--edge);border-radius:14px;background:radial-gradient(120% 80% at 50% 30%,#1a0709 0%,#050505 70%);padding:0 0 14px;margin-bottom:12px;overflow:hidden}
-#av{display:block;width:100%;height:380px;touch-action:pan-y}
-.av-over{position:absolute;left:14px;right:14px;top:12px;display:flex;align-items:flex-start;gap:12px;pointer-events:none}
+.av-over{display:flex;align-items:flex-start;gap:12px;padding:14px 14px 0}
 .av-lv{display:flex;flex-direction:column;align-items:center;min-width:54px;border:1px solid var(--red);border-radius:10px;padding:6px 8px;background:rgba(0,0,0,.55)}
 .av-lv span{font:600 10px var(--body);letter-spacing:.14em;text-transform:uppercase;color:var(--mute)}
 .av-lv b{font:800 32px/1 var(--display);color:var(--red-hi)}
@@ -281,5 +280,41 @@ textarea.note-in,textarea.bk-in{width:100%;min-height:84px;background:#0b0b0b;bo
 .v-x{align-self:flex-end;margin:calc(10px + env(safe-area-inset-top,0px)) 14px 8px;min-height:44px;padding:0 16px;border:1px solid #3a3a3a;border-radius:10px;font:700 14px var(--body)}
 .v-cap{padding:12px;text-align:center;font:700 14px var(--body);letter-spacing:.06em}
 
-.av-card.flat{padding:0 0 14px}
-.av-card.flat .av-over{position:static;padding:14px 14px 4px}
+/* v1.4: monthly check-ins, character tab */
+.seg{grid-template-columns:repeat(5,1fr);gap:5px}
+.seg button{position:relative;font-size:13px;letter-spacing:.02em;white-space:nowrap}
+.seg button.due::after{content:"";position:absolute;top:5px;right:5px;width:7px;height:7px;border-radius:50%;background:var(--red-hi)}
+.wide-btn.solid{background:var(--red);color:#fff}
+.mo-card{border:1px solid var(--edge);border-radius:14px;padding:16px;background:var(--card);display:flex;flex-direction:column;gap:12px}
+.mo-card.due{border-color:var(--red)}
+.mo-card .lk-q,.mo-card .lk-how{margin:0}
+.mo-st{font:800 30px/1 var(--display);letter-spacing:.05em;text-transform:uppercase}
+.mo-card.due .mo-st{color:var(--red-hi)}
+.mo-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:6px}
+.mo{display:flex;flex-direction:column;align-items:center;gap:6px;min-height:52px;padding:8px 0;border:1px solid var(--edge);border-radius:8px;background:#0b0b0b}
+.mo span{font:700 13px/1 var(--display);letter-spacing:.06em;text-transform:uppercase;color:var(--mute)}
+.mo i{width:14px;height:14px;border-radius:50%;border:2px solid #3a3a3a}
+.mo.hit i{background:var(--red);border-color:var(--red)}
+.mo.hit span{color:var(--fg)}
+.mo.cur{border-color:var(--red)}
+.ch-svg{display:block;width:100%;max-width:330px;height:auto;margin:0 auto;overflow:visible}
+.ch-svg.ghost .ch-fig{opacity:.38}
+.ch-svg.glow .ch-fig{filter:drop-shadow(0 0 7px #e3171f)}
+.ch-fig{animation:chbreathe 3.6s ease-in-out infinite}
+@keyframes chbreathe{0%,100%{transform:translateY(0)}50%{transform:translateY(-2px)}}
+.ch-mood{text-align:center;margin:2px 14px 10px;font:600 12px var(--body);letter-spacing:.08em;text-transform:uppercase;color:var(--mute)}
+.lk-rows.gear div{align-items:center}
+.lk-rows.gear span{display:flex;flex-direction:column;gap:2px;min-width:0}
+.lk-rows.gear span b{color:var(--fg);font-weight:600}
+.lk-rows.gear em{font:500 13px/1.35 var(--body);font-style:normal;color:var(--mute)}
+.lk-rows.gear>div>b{color:var(--red-hi);white-space:nowrap}
+.lk-rows.gear .no span b,.lk-rows.gear .no>b{color:var(--mute)}
+.ti-list{display:flex;flex-direction:column;gap:8px}
+.ti{display:flex;flex-direction:column;gap:3px;width:100%;text-align:left;padding:11px 14px;min-height:54px;border:1px solid var(--edge);border-radius:12px;background:var(--card)}
+.ti b{font:700 19px/1.1 var(--display);letter-spacing:.06em;text-transform:uppercase}
+.ti span{font:500 13px/1.35 var(--body);color:var(--mute)}
+.ti.on{border-color:var(--red);background:var(--red-dim)}
+.ti.on b{color:var(--red-hi)}
+.ti.no{border-style:dashed;background:none}
+.ti.no b{color:#5a5a5a}
+@media (prefers-reduced-motion:reduce){.ch-fig{animation:none}}
